@@ -68,6 +68,19 @@
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "badboy/mdbook-mermaid",
       "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^\\.github\\/workflows\\/cadmus-docs\\.yml$/",
+        "/^\\.github\\/workflows\\/cargo\\.yml$/",
+        "/^\\.github\\/workflows\\/release\\.yml$/",
+        "/^\\.github\\/workflows\\/copilot-setup-steps\\.yml$/"
+      ],
+      "matchStrings": ["NODE_VERSION:\\s+\\\"(?<currentValue>[^\\\"]+)\\\""],
+      "datasourceTemplate": "node-version",
+      "depNameTemplate": "node",
+      "versioningTemplate": "node"
     }
   ]
 }

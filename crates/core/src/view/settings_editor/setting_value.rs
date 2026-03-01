@@ -384,16 +384,17 @@ impl SettingValue {
 
         let display = &settings.intermissions[kind];
 
-        let (value, is_logo, is_cover) = match display {
-            IntermissionDisplay::Logo => ("Logo".to_string(), true, false),
-            IntermissionDisplay::Cover => ("Cover".to_string(), false, true),
+        let (value, is_logo, is_cover, is_calendar) = match display {
+            IntermissionDisplay::Logo => ("Logo".to_string(), true, false, false),
+            IntermissionDisplay::Cover => ("Cover".to_string(), false, true, false),
+            IntermissionDisplay::Calendar => ("Calendar".to_string(), false, false, true),
             IntermissionDisplay::Image(path) => {
                 let display_name = path
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("Custom")
                     .to_string();
-                (display_name, false, false)
+                (display_name, false, false, false)
             }
         };
 
@@ -407,6 +408,11 @@ impl SettingValue {
                 "Cover".to_string(),
                 EntryId::SetIntermission(kind, IntermissionDisplay::Cover),
                 is_cover,
+            ),
+            EntryKind::RadioButton(
+                "Calendar".to_string(),
+                EntryId::SetIntermission(kind, IntermissionDisplay::Calendar),
+                is_calendar,
             ),
             EntryKind::Command(
                 "Custom Image...".to_string(),

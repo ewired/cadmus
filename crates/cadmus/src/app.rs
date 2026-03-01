@@ -1,7 +1,7 @@
 use cadmus_core::anyhow::{format_err, Context as ResultExt, Error};
 use cadmus_core::assets::open_documentation;
 use cadmus_core::battery::{Battery, KoboBattery};
-use cadmus_core::chrono::Local;
+use cadmus_core::chrono::{Local, Timelike};
 use cadmus_core::context::Context;
 use cadmus_core::device::{FrontlightKind, Orientation, CURRENT_DEVICE};
 use cadmus_core::document::sys_info_as_html;
@@ -804,6 +804,15 @@ pub fn run() -> Result<(), Error> {
                             .map_err(|e| error!("Can't schedule auto power off alarm: {:#}.", e))
                             .ok();
                     }
+                    let now = Local::now();
+                    let seconds_until_next_hour =
+                        3600 - (now.minute() as i64 * 60 + now.second() as i64);
+                    if !alarm_manager.is_alarm_scheduled(AlarmType::CalendarUpdate) {
+                        alarm_manager
+                            .schedule_alarm(AlarmType::CalendarUpdate, seconds_until_next_hour)
+                            .map_err(|e| error!("Can't schedule calendar update alarm: {:#}.", e))
+                            .ok();
+                    }
                 }
                 let before = Local::now();
                 info!(
@@ -832,6 +841,20 @@ pub fn run() -> Result<(), Error> {
                                 power_off(view.as_mut(), &mut history, &mut updating, &mut context);
                                 exit_status = ExitStatus::PowerOff;
                                 break;
+                            }
+
+                            if fired_alarms.contains(&AlarmType::CalendarUpdate) {
+                                let interm = Intermission::new(
+                                    context.fb.rect(),
+                                    IntermKind::Calendar,
+                                    &context,
+                                );
+                                rq.add(RenderData::new(
+                                    interm.id(),
+                                    *interm.rect(),
+                                    UpdateMode::Full,
+                                ));
+                                view.children_mut().push(Box::new(interm) as Box<dyn View>);
                             }
                         }
                         Err(e) => {

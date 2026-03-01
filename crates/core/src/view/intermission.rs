@@ -3,11 +3,13 @@ use crate::color::{TEXT_INVERTED_HARD, TEXT_NORMAL};
 use crate::context::Context;
 use crate::device::CURRENT_DEVICE;
 use crate::document::{open, Location};
-use crate::font::{font_from_style, Fonts, DISPLAY_STYLE};
+use crate::font::{font_from_style, Fonts, DISPLAY_STYLE, NORMAL_STYLE};
 use crate::framebuffer::Framebuffer;
 use crate::geom::Rectangle;
 use crate::metadata::{sort, BookQuery, SortMethod};
 use crate::settings::{IntermKind, IntermissionDisplay};
+use chrono::{Datelike, Local, TimeZone, Timelike};
+use log::info;
 use std::path::PathBuf;
 
 pub struct Intermission {
@@ -22,6 +24,7 @@ pub enum Message {
     Text(String),
     Image(PathBuf),
     Cover(PathBuf),
+    Calendar,
 }
 
 impl Intermission {
@@ -45,6 +48,7 @@ impl Intermission {
                 }
             }
             IntermissionDisplay::Image(path) => Message::Image(path.clone()),
+            IntermissionDisplay::Calendar => Message::Calendar,
         };
         Intermission {
             id: ID_FEEDER.next(),
@@ -148,6 +152,120 @@ impl View for Intermission {
                             let rect = pixmap.rect() + pt;
                             fb.invert_region(&rect);
                         }
+                    }
+                }
+            }
+            Message::Calendar => {
+                let dpi = CURRENT_DEVICE.dpi;
+                let now = Local::now();
+                info!("Calendar rendered at: {}", now);
+                let year = now.year();
+                let month = now.month();
+                let today = now.day() as i32;
+
+                let month_names = [
+                    "January",
+                    "February",
+                    "March",
+                    "April",
+                    "May",
+                    "June",
+                    "July",
+                    "August",
+                    "September",
+                    "October",
+                    "November",
+                    "December",
+                ];
+                let month_name = month_names[(month - 1) as usize];
+                let title = format!("{} {}", month_name, year);
+
+                let weekdays = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+
+                let days_in_month = {
+                    let (next_month_year, next_month) = if month == 12 {
+                        (year + 1, 1)
+                    } else {
+                        (year, month + 1)
+                    };
+                    let next_month_start = Local
+                        .with_ymd_and_hms(next_month_year, next_month, 1, 0, 0, 0)
+                        .unwrap();
+                    let last_day = next_month_start - chrono::Duration::days(1);
+                    last_day.day()
+                };
+
+                let first_of_month = Local.with_ymd_and_hms(year, month, 1, 0, 0, 0).unwrap();
+                let starting_weekday = first_of_month.weekday().num_days_from_sunday() as i32;
+
+                let font = font_from_style(fonts, &NORMAL_STYLE, dpi);
+                let x_height = font.x_heights.0 as i32;
+                let line_height = x_height * 2;
+
+                let title_plan = font.plan(&title, None, None);
+                let title_dx = (self.rect.width() as i32 - title_plan.width) / 2;
+                let title_dy = x_height * 2;
+                font.render(fb, scheme[1], &title_plan, pt!(title_dx, title_dy));
+
+                let time_str = format!("{:02}:{:02}:{:02}", now.hour(), now.minute(), now.second());
+                let time_plan = font.plan(&time_str, None, None);
+                let time_dx = (self.rect.width() as i32 - time_plan.width) / 2;
+                let time_dy = title_dy + line_height;
+                font.render(fb, scheme[1], &time_plan, pt!(time_dx, time_dy));
+
+                let grid_start_y = time_dy + line_height + x_height;
+                let cell_width = self.rect.width() as i32 / 7;
+                let cell_height = line_height;
+
+                for (i, day_name) in weekdays.iter().enumerate() {
+                    let plan = font.plan(day_name, None, None);
+                    let dx = (cell_width - plan.width) / 2 + (i as i32 * cell_width);
+                    font.render(fb, scheme[1], &plan, pt!(dx, grid_start_y));
+                }
+
+                let days_start_y = grid_start_y + cell_height + x_height;
+                let mut day_num = 1i32;
+
+                for week in 0..6 {
+                    for weekday in 0..7 {
+                        let cell_x = weekday * cell_width;
+                        let cell_y = days_start_y + week * cell_height;
+
+                        if week == 0 && weekday < starting_weekday {
+                            continue;
+                        }
+
+                        if day_num > days_in_month as i32 {
+                            break;
+                        }
+
+                        let day_str = day_num.to_string();
+                        let plan = font.plan(&day_str, None, None);
+                        let dx = (cell_width - plan.width) / 2 + cell_x;
+                        let dy = cell_y;
+
+                        if day_num == today {
+                            let box_padding = x_height / 2;
+                            let box_rect = Rectangle {
+                                min: pt!(
+                                    cell_x + (cell_width - plan.width) / 2 - box_padding,
+                                    dy - box_padding / 2
+                                ),
+                                max: pt!(
+                                    cell_x + (cell_width + plan.width) / 2 + box_padding,
+                                    dy + x_height + box_padding / 2
+                                ),
+                            };
+                            fb.draw_rectangle(&box_rect, scheme[1]);
+                            font.render(fb, scheme[0], &plan, pt!(dx, dy));
+                        } else {
+                            font.render(fb, scheme[1], &plan, pt!(dx, dy));
+                        }
+
+                        day_num += 1;
+                    }
+                    if day_num > days_in_month as i32 {
+                        break;
                     }
                 }
             }

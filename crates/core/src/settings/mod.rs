@@ -23,17 +23,16 @@ pub const INTERNAL_CARD_ROOT: &str = "/mnt/onboard";
 pub const EXTERNAL_CARD_ROOT: &str = "/mnt/sd";
 const LOGO_SPECIAL_PATH: &str = "logo:";
 const COVER_SPECIAL_PATH: &str = "cover:";
+const CALENDAR_SPECIAL_PATH: &str = "calendar:";
 
 /// How to display intermission screens.
 /// Logo and Cover are special values that map to built-in images.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum IntermissionDisplay {
-    /// Display the built-in logo image.
     Logo,
-    /// Display the cover of the currently reading book.
     Cover,
-    /// Display a custom image from the given path.
     Image(PathBuf),
+    Calendar,
 }
 
 impl Serialize for IntermissionDisplay {
@@ -47,6 +46,7 @@ impl Serialize for IntermissionDisplay {
             IntermissionDisplay::Image(path) => {
                 serializer.serialize_str(path.to_string_lossy().as_ref())
             }
+            IntermissionDisplay::Calendar => serializer.serialize_str(CALENDAR_SPECIAL_PATH),
         }
     }
 }
@@ -60,6 +60,7 @@ impl<'de> Deserialize<'de> for IntermissionDisplay {
         Ok(match s.as_str() {
             LOGO_SPECIAL_PATH => IntermissionDisplay::Logo,
             COVER_SPECIAL_PATH => IntermissionDisplay::Cover,
+            CALENDAR_SPECIAL_PATH => IntermissionDisplay::Calendar,
             _ => IntermissionDisplay::Image(PathBuf::from(s)),
         })
     }
@@ -71,6 +72,7 @@ impl fmt::Display for IntermissionDisplay {
             IntermissionDisplay::Logo => write!(f, "Logo"),
             IntermissionDisplay::Cover => write!(f, "Cover"),
             IntermissionDisplay::Image(_) => write!(f, "Custom"),
+            IntermissionDisplay::Calendar => write!(f, "Calendar"),
         }
     }
 }
@@ -115,6 +117,7 @@ pub enum IntermKind {
     Suspend,
     PowerOff,
     Share,
+    Calendar,
 }
 
 impl IntermKind {
@@ -123,6 +126,7 @@ impl IntermKind {
             IntermKind::Suspend => "Sleeping",
             IntermKind::PowerOff => "Powered off",
             IntermKind::Share => "Shared",
+            IntermKind::Calendar => "Calendar",
         }
     }
 }
@@ -134,6 +138,7 @@ pub struct Intermissions {
     suspend: IntermissionDisplay,
     power_off: IntermissionDisplay,
     share: IntermissionDisplay,
+    calendar: IntermissionDisplay,
 }
 
 impl Index<IntermKind> for Intermissions {
@@ -144,6 +149,7 @@ impl Index<IntermKind> for Intermissions {
             IntermKind::Suspend => &self.suspend,
             IntermKind::PowerOff => &self.power_off,
             IntermKind::Share => &self.share,
+            IntermKind::Calendar => &self.calendar,
         }
     }
 }
@@ -154,6 +160,7 @@ impl IndexMut<IntermKind> for Intermissions {
             IntermKind::Suspend => &mut self.suspend,
             IntermKind::PowerOff => &mut self.power_off,
             IntermKind::Share => &mut self.share,
+            IntermKind::Calendar => &mut self.calendar,
         }
     }
 }
@@ -674,6 +681,7 @@ impl Default for Settings {
                 suspend: IntermissionDisplay::Logo,
                 power_off: IntermissionDisplay::Logo,
                 share: IntermissionDisplay::Logo,
+                calendar: IntermissionDisplay::Calendar,
             },
             home: HomeSettings::default(),
             reader: ReaderSettings::default(),
@@ -711,6 +719,7 @@ mod tests {
             suspend: IntermissionDisplay::Logo,
             power_off: IntermissionDisplay::Cover,
             share: IntermissionDisplay::Image(PathBuf::from("/custom/share.png")),
+            calendar: IntermissionDisplay::Logo,
         };
 
         let serialized = toml::to_string(&intermissions).expect("Failed to serialize");
@@ -735,6 +744,7 @@ mod tests {
 suspend = "logo:"
 power-off = "cover:"
 share = "/path/to/custom.png"
+calendar = "calendar:"
 "#;
 
         let intermissions: Intermissions = toml::from_str(toml_str).expect("Failed to deserialize");
@@ -754,6 +764,10 @@ share = "/path/to/custom.png"
             ),
             "share should deserialize to Image with correct path"
         );
+        assert!(
+            matches!(intermissions.calendar, IntermissionDisplay::Calendar),
+            "calendar should deserialize to Calendar"
+        );
     }
 
     #[test]
@@ -762,6 +776,7 @@ share = "/path/to/custom.png"
             suspend: IntermissionDisplay::Logo,
             power_off: IntermissionDisplay::Cover,
             share: IntermissionDisplay::Image(PathBuf::from("/some/custom/image.jpg")),
+            calendar: IntermissionDisplay::Calendar,
         };
 
         let serialized = toml::to_string(&original).expect("Failed to serialize");
@@ -779,6 +794,10 @@ share = "/path/to/custom.png"
         assert_eq!(
             original.share, deserialized.share,
             "share should survive round trip"
+        );
+        assert_eq!(
+            original.calendar, deserialized.calendar,
+            "calendar should survive round trip"
         );
     }
 }

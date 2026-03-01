@@ -100,6 +100,7 @@ impl Rtc {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AlarmType {
     AutoPowerOff,
+    CalendarUpdate,
 }
 
 pub struct ScheduledAlarm {

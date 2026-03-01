@@ -46,6 +46,7 @@ use cadmus_core::view::{
     AppCmd, EntryId, EntryKind, Event, NotificationEvent, RenderData, RenderQueue, UpdateData,
     View, ViewId,
 };
+use cadmus_core::AlarmType;
 use std::collections::VecDeque;
 use std::env;
 use std::fs::File;
@@ -791,12 +792,18 @@ pub fn run() -> Result<(), Error> {
                 );
             }
             Event::Suspend => {
-                if context.settings.auto_power_off > 0.0 {
-                    context.rtc.iter().for_each(|rtc| {
-                        rtc.set_alarm(context.settings.auto_power_off)
-                            .map_err(|e| error!("Can't set alarm: {:#}.", e))
+                if let Some(alarm_manager) = context.alarm_manager.as_mut() {
+                    if context.settings.auto_power_off > 0.0
+                        && !alarm_manager.is_alarm_scheduled(AlarmType::AutoPowerOff)
+                    {
+                        alarm_manager
+                            .schedule_alarm(
+                                AlarmType::AutoPowerOff,
+                                (context.settings.auto_power_off * 86400.0) as i64,
+                            )
+                            .map_err(|e| error!("Can't schedule auto power off alarm: {:#}.", e))
                             .ok();
-                    });
+                    }
                 }
                 let before = Local::now();
                 info!(
@@ -816,30 +823,19 @@ pub fn run() -> Result<(), Error> {
                     &tx,
                     &mut tasks,
                 );
-                if context.settings.auto_power_off > 0.0 {
-                    let dur = cadmus_core::chrono::Duration::seconds(
-                        (86_400.0 * context.settings.auto_power_off) as i64,
-                    );
-                    if let Some(fired) = context.rtc.as_ref().and_then(|rtc| {
-                        rtc.alarm()
-                            .map_err(|e| error!("Can't get alarm: {:#}", e))
-                            .map(|rwa| {
-                                !rwa.enabled()
-                                    || (rwa.year() <= 1970
-                                        && ((after - before) - dur).num_seconds().abs() < 3)
-                            })
-                            .ok()
-                    }) {
-                        if fired {
-                            power_off(view.as_mut(), &mut history, &mut updating, &mut context);
-                            exit_status = ExitStatus::PowerOff;
-                            break;
-                        } else {
-                            context.rtc.iter().for_each(|rtc| {
-                                rtc.disable_alarm()
-                                    .map_err(|e| error!("Can't disable alarm: {:#}.", e))
-                                    .ok();
-                            });
+                if let Some(alarm_manager) = context.alarm_manager.as_mut() {
+                    match alarm_manager.check_fired_alarms(after.to_utc(), before.to_utc()) {
+                        Ok(fired_alarms) => {
+                            println!("Alarms fired: {:?}", fired_alarms);
+
+                            if fired_alarms.contains(&AlarmType::AutoPowerOff) {
+                                power_off(view.as_mut(), &mut history, &mut updating, &mut context);
+                                exit_status = ExitStatus::PowerOff;
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Error checking fired alarms: {:#}.", e);
                         }
                     }
                 }

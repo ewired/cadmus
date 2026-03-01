@@ -125,7 +125,7 @@ impl AlarmManager {
         alarm_type: AlarmType,
         seconds_from_now: i64,
     ) -> Result<(), Error> {
-        let wake_time = Utc::now() + Duration::seconds(seconds_from_now as i64);
+        let wake_time = Utc::now() + Duration::seconds(seconds_from_now);
         self.scheduled_alarms.insert(
             alarm_type,
             ScheduledAlarm {
@@ -179,7 +179,6 @@ impl AlarmManager {
         before: DateTime<Utc>,
     ) -> Result<Vec<AlarmType>, Error> {
         let mut fired_types = Vec::new();
-        let now = Utc::now();
 
         // Get the earliest scheduled alarm for duration comparison
         if let Some((_, earliest_alarm)) = self
@@ -187,7 +186,7 @@ impl AlarmManager {
             .iter()
             .min_by_key(|(_, alarm)| &alarm.wake_time)
         {
-            let expected_duration = earliest_alarm.wake_time.signed_duration_since(now);
+            let expected_duration = earliest_alarm.wake_time.signed_duration_since(before);
 
             // Check hardware alarm state
             let rwa = self.rtc.alarm()?;
@@ -196,6 +195,7 @@ impl AlarmManager {
                     && ((after - before) - expected_duration).num_seconds().abs() < 3);
 
             if hardware_alarm_fired {
+                let now = Utc::now();
                 // Check which logical alarms should fire
                 let mut to_remove = Vec::new();
                 for (alarm_type, scheduled_alarm) in &self.scheduled_alarms {

@@ -826,7 +826,7 @@ pub fn run() -> Result<(), Error> {
                 if let Some(alarm_manager) = context.alarm_manager.as_mut() {
                     match alarm_manager.check_fired_alarms(after.to_utc(), before.to_utc()) {
                         Ok(fired_alarms) => {
-                            println!("Alarms fired: {:?}", fired_alarms);
+                            info!("Alarms fired: {:?}", fired_alarms);
 
                             if fired_alarms.contains(&AlarmType::AutoPowerOff) {
                                 power_off(view.as_mut(), &mut history, &mut updating, &mut context);
@@ -835,7 +835,7 @@ pub fn run() -> Result<(), Error> {
                             }
                         }
                         Err(e) => {
-                            eprintln!("Error checking fired alarms: {:#}.", e);
+                            error!("Error checking fired alarms: {:#}.", e);
                         }
                     }
                 }

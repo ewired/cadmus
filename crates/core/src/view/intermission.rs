@@ -8,6 +8,7 @@ use crate::framebuffer::Framebuffer;
 use crate::geom::Rectangle;
 use crate::metadata::{sort, BookQuery, SortMethod};
 use crate::settings::{IntermKind, IntermissionDisplay};
+use crate::AlarmType;
 use chrono::{Datelike, Local, TimeZone, Timelike};
 use log::info;
 use std::path::PathBuf;
@@ -24,7 +25,7 @@ pub enum Message {
     Text(String),
     Image(PathBuf),
     Cover(PathBuf),
-    Calendar,
+    Calendar(Option<i64>),
 }
 
 impl Intermission {
@@ -48,7 +49,14 @@ impl Intermission {
                 }
             }
             IntermissionDisplay::Image(path) => Message::Image(path.clone()),
-            IntermissionDisplay::Calendar => Message::Calendar,
+            IntermissionDisplay::Calendar => {
+                let minutes_until_poweroff = context
+                    .alarm_manager
+                    .as_ref()
+                    .and_then(|am| am.time_until_alarm(AlarmType::AutoPowerOff))
+                    .map(|secs| secs / 60);
+                Message::Calendar(minutes_until_poweroff)
+            }
         };
         Intermission {
             id: ID_FEEDER.next(),
@@ -155,7 +163,7 @@ impl View for Intermission {
                     }
                 }
             }
-            Message::Calendar => {
+            Message::Calendar(minutes_until_poweroff) => {
                 let dpi = CURRENT_DEVICE.dpi;
                 let now = Local::now();
                 info!("Calendar rendered at: {}", now);
@@ -213,7 +221,18 @@ impl View for Intermission {
                 let time_dy = title_dy + line_height;
                 font.render(fb, scheme[1], &time_plan, pt!(time_dx, time_dy));
 
-                let grid_start_y = time_dy + line_height + x_height;
+                let poweroff_dy = if let Some(minutes) = minutes_until_poweroff {
+                    let poweroff_str = format!("Auto power off in {} min", minutes);
+                    let poweroff_plan = font.plan(&poweroff_str, None, None);
+                    let poweroff_dx = (self.rect.width() as i32 - poweroff_plan.width) / 2;
+                    let poweroff_dy = time_dy + line_height;
+                    font.render(fb, scheme[1], &poweroff_plan, pt!(poweroff_dx, poweroff_dy));
+                    poweroff_dy
+                } else {
+                    time_dy
+                };
+
+                let grid_start_y = poweroff_dy + line_height + x_height;
                 let cell_width = self.rect.width() as i32 / 7;
                 let cell_height = line_height;
 

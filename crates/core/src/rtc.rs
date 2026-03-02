@@ -174,6 +174,15 @@ impl AlarmManager {
         }
     }
 
+    pub fn time_until_alarm(&self, alarm_type: AlarmType) -> Option<i64> {
+        self.scheduled_alarms.get(&alarm_type).map(|alarm| {
+            alarm
+                .wake_time
+                .signed_duration_since(Utc::now())
+                .num_seconds()
+        })
+    }
+
     pub fn check_fired_alarms(
         &mut self,
         after: DateTime<Utc>,

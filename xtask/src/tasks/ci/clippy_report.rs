@@ -20,9 +20,10 @@
 //! ## Deduplication key
 //!
 //! Two diagnostics are considered identical when they share the same
-//! `(file_name, line_start, message)` triple taken from the first span of the
-//! clippy JSON message.  Compiler artefacts without a primary span (e.g.
-//! build-script output) are forwarded as-is without deduplication.
+//! `(file_name, line_start, message)` triple taken from the primary span of the
+//! clippy JSON message.  Only diagnostic messages (compiler-message with spans)
+//! are included; non-diagnostic JSON (build artifacts, build-finished, etc.)
+//! is filtered out.
 //!
 //! ## Reviewdog
 //!
@@ -71,6 +72,9 @@ pub fn run(args: ClippyReportArgs) -> Result<()> {
 /// Collects all JSON lines from every `.json` file in `dir`, returning only
 /// the unique ones (deduplicated by primary span + message text).
 ///
+/// Only diagnostic messages (compiler-message with spans) are included.
+/// Non-diagnostic JSON (build artifacts, build-finished, etc.) is filtered out.
+///
 /// # Errors
 ///
 /// Returns an error if the directory cannot be read or any file cannot be
@@ -92,7 +96,9 @@ fn collect_unique_lines(dir: &Path) -> Result<Vec<String>> {
 
             let key = diagnostic_key(&line);
 
-            if seen.insert(key) {
+            if let DiagnosticKey::Spanned { .. } = key
+                && seen.insert(key)
+            {
                 unique.push(line);
             }
         }
@@ -131,8 +137,8 @@ fn json_files(dir: &Path) -> Result<Vec<PathBuf>> {
 ///
 /// Two diagnostics with the same file, line, and message text are considered
 /// identical even if they were produced under different feature combinations.
-/// Lines that are not valid JSON, or that lack a primary span, use the raw
-/// line text as the key so they are forwarded exactly once.
+/// Non-diagnostic JSON (e.g., build artifacts) returns a Raw key but is filtered
+/// out during collection since only Spanned keys are forwarded to reviewdog.
 #[derive(Debug, PartialEq, Eq, Hash)]
 enum DiagnosticKey {
     Spanned {
@@ -143,21 +149,37 @@ enum DiagnosticKey {
     Raw(String),
 }
 
+/// Extracts a primary span from clippy JSON diagnostic message.
+///
+/// The spans array can have multiple entries. The primary span is identified
+/// by having `is_primary: true`. If no span has this flag, returns the first span.
+fn find_primary_span(message: &Value) -> Option<&Value> {
+    let spans = message.pointer("/message/spans")?.as_array()?;
+
+    for span in spans {
+        if span.get("is_primary").and_then(Value::as_bool) == Some(true) {
+            return Some(span);
+        }
+    }
+
+    spans.first()
+}
+
 /// Extracts a [`DiagnosticKey`] from a raw clippy JSON line.
 fn diagnostic_key(line: &str) -> DiagnosticKey {
     let Ok(value) = serde_json::from_str::<Value>(line) else {
         return DiagnosticKey::Raw(line.to_owned());
     };
 
-    let file = value
-        .pointer("/message/spans/0/file_name")
+    let Some(span) = find_primary_span(&value) else {
+        return DiagnosticKey::Raw(line.to_owned());
+    };
+
+    let file = span
+        .get("file_name")
         .and_then(Value::as_str)
         .map(str::to_owned);
-
-    let line_start = value
-        .pointer("/message/spans/0/line_start")
-        .and_then(Value::as_u64);
-
+    let line_start = span.get("line_start").and_then(Value::as_u64);
     let message = value
         .pointer("/message/message")
         .and_then(Value::as_str)
@@ -173,8 +195,58 @@ fn diagnostic_key(line: &str) -> DiagnosticKey {
     }
 }
 
+/// Converts a clippy JSON line to short format for reviewdog.
+///
+/// # Panics
+///
+/// Panics if the JSON line does not have the expected diagnostic structure
+/// (i.e., missing primary span or `/message/message`).
+/// Non-diagnostic JSON lines (like `build-finished`) should be filtered out
+/// before calling this function.
+fn json_to_short(line: &str) -> String {
+    let value = serde_json::from_str::<Value>(line).expect("failed to parse JSON line");
+
+    let span = find_primary_span(&value).expect("clippy JSON should have a primary span");
+
+    let file = span
+        .get("file_name")
+        .and_then(Value::as_str)
+        .expect("primary span should have file_name");
+
+    let line_start = span
+        .get("line_start")
+        .and_then(Value::as_u64)
+        .expect("primary span should have line_start");
+
+    let column_start = span
+        .get("column_start")
+        .and_then(Value::as_u64)
+        .unwrap_or(1);
+
+    let level = value
+        .pointer("/message/level")
+        .and_then(Value::as_str)
+        .unwrap_or("warning");
+
+    let message = value
+        .pointer("/message/message")
+        .and_then(Value::as_str)
+        .expect("clippy JSON should have /message/message");
+
+    let code = value.pointer("/message/code/code").and_then(Value::as_str);
+
+    if let Some(code) = code {
+        format!("{file}:{line_start}:{column_start}: {level}: {message} [{code}]")
+    } else {
+        format!("{file}:{line_start}:{column_start}: {level}: {message}")
+    }
+}
+
 /// Spawns `reviewdog` with the `github-pr-review` reporter and writes `lines`
 /// to its stdin.
+///
+/// JSON lines are converted to short format for compatibility with reviewdog's
+/// clippy parser.
 ///
 /// # Errors
 ///
@@ -203,7 +275,8 @@ fn pipe_to_reviewdog(lines: &[String]) -> Result<()> {
         .context("reviewdog stdin not captured")?;
 
     for line in lines {
-        writeln!(stdin, "{line}").context("failed to write to reviewdog stdin")?;
+        let short_line = json_to_short(line);
+        writeln!(stdin, "{short_line}").context("failed to write to reviewdog stdin")?;
     }
 
     drop(stdin);
@@ -318,7 +391,7 @@ mod tests {
     }
 
     #[test]
-    fn non_json_lines_deduplicated_by_raw_text() {
+    fn non_json_lines_are_filtered_out() {
         let dir = tempdir().unwrap();
 
         write_artifact(dir.path(), "a.json", &["not json"]);
@@ -326,11 +399,11 @@ mod tests {
 
         let lines = collect_unique_lines(dir.path()).unwrap();
 
-        assert_eq!(lines.len(), 1);
+        assert_eq!(lines.len(), 0);
     }
 
     #[test]
-    fn spanless_json_deduplicated_by_raw_text() {
+    fn spanless_json_is_filtered_out() {
         let dir = tempdir().unwrap();
         let spanless = serde_json::json!({ "reason": "build-finished" }).to_string();
 
@@ -339,7 +412,7 @@ mod tests {
 
         let lines = collect_unique_lines(dir.path()).unwrap();
 
-        assert_eq!(lines.len(), 1);
+        assert_eq!(lines.len(), 0);
     }
 
     #[test]
@@ -365,5 +438,96 @@ mod tests {
         let lines = collect_unique_lines(dir.path()).unwrap();
 
         assert_eq!(lines.len(), 1);
+    }
+
+    #[test]
+    fn json_to_short_converts_clippy_json_to_short_format() {
+        let json_line = serde_json::json!({
+            "reason": "compiler-message",
+            "message": {
+                "message": "deref which would be done by auto-deref",
+                "level": "warning",
+                "spans": [
+                    {
+                        "file_name": "crates/core/src/library/db/mod.rs",
+                        "line_start": 895,
+                        "column_start": 32,
+                        "line_end": 895,
+                        "column_end": 36,
+                        "text": "    let y: &str = &x;"
+                    }
+                ],
+                "code": {
+                    "code": "clippy::ptr_arg",
+                    "explanation": "..."
+                }
+            }
+        })
+        .to_string();
+
+        let result = json_to_short(&json_line);
+
+        assert_eq!(
+            result,
+            "crates/core/src/library/db/mod.rs:895:32: warning: deref which would be done by auto-deref [clippy::ptr_arg]"
+        );
+    }
+
+    #[test]
+    fn json_to_short_handles_missing_code_field() {
+        let json_line = serde_json::json!({
+            "reason": "compiler-message",
+            "message": {
+                "message": "unused variable: `x`",
+                "level": "warning",
+                "spans": [
+                    {
+                        "file_name": "src/lib.rs",
+                        "line_start": 10,
+                        "column_start": 5,
+                        "line_end": 10,
+                        "column_end": 6,
+                        "text": "let x = 1;"
+                    }
+                ]
+            }
+        })
+        .to_string();
+
+        let result = json_to_short(&json_line);
+
+        assert_eq!(result, "src/lib.rs:10:5: warning: unused variable: `x`");
+    }
+
+    #[test]
+    fn json_to_short_handles_error_level() {
+        let json_line = serde_json::json!({
+            "reason": "compiler-message",
+            "message": {
+                "message": "expected `,`, found `{`",
+                "level": "error",
+                "spans": [
+                    {
+                        "file_name": "src/main.rs",
+                        "line_start": 1,
+                        "column_start": 1,
+                        "line_end": 1,
+                        "column_end": 1,
+                        "text": "fn main() {"
+                    }
+                ],
+                "code": {
+                    "code": "E0789"
+                }
+            }
+        })
+        .to_string();
+
+        let result = json_to_short(&json_line);
+
+        assert_eq!(
+            result,
+            "src/main.rs:1:1: error: expected `,`, found `{` [E0789]"
+        );
     }
 }

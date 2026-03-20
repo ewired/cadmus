@@ -49,13 +49,13 @@ use cadmus_core::view::{
     View, ViewId,
 };
 use std::collections::VecDeque;
+use std::env;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
-use std::{env, fs};
 use tracing::{debug, error, info};
 
 pub const APP_NAME: &str = "Cadmus";
@@ -98,6 +98,7 @@ struct Task {
 enum TaskId {
     CheckBattery,
     PrepareSuspend,
+    Exit,
     Suspend,
 }
 
@@ -324,52 +325,89 @@ fn prepare_share_for_usb(
 
 /// Changes the working directory to `/tmp` and enables USB sharing.
 ///
-/// Copy the disable script to the `/tmp` working directory so that
-/// it can be found when stopping the share.
-///
 /// The `/mnt/onboard` filesystem is unmounted when USB sharing starts.
 /// Setting the working directory to `/tmp` ensures it remains valid throughout
 /// the share session, preventing file operation failures.
+///
+/// Sets `context.shared = true` only when `enable()` succeeds. On failure,
+/// shows a transient notification and schedules a device reboot after 3 seconds.
+/// The share screen remains visible during the reboot window.
 #[inline]
-fn start_usb_share(context: &mut Context) {
-    context.shared = true;
-
-    match fs::create_dir_all("/tmp/scripts/") {
-        Ok(_) => match fs::copy("scripts/usb-disable.sh", "/tmp/scripts/usb-disable.sh") {
-            Ok(_) => {}
+fn start_usb_share(tx: &Sender<Event>, tasks: &mut Vec<Task>, context: &mut Context) {
+    match CURRENT_DEVICE.usb_manager() {
+        Ok(usb_manager) => match usb_manager.enable() {
+            Ok(()) => {
+                context.shared = true;
+                if let Err(e) = env::set_current_dir("/tmp") {
+                    error!(error = %e, "failed to set working directory to /tmp before USB share");
+                }
+            }
             Err(e) => {
-                error!({error = ?e}, "failed to copy usb disable script")
+                error!(error = %e, "Failed to enable USB sharing");
+                tx.send(Event::Notification(NotificationEvent::Show(
+                    "Failed to start USB session".to_string(),
+                )))
+                .ok();
+                schedule_task(
+                    TaskId::Exit,
+                    Event::Select(EntryId::Reboot),
+                    Duration::from_secs(3),
+                    tx,
+                    tasks,
+                );
             }
         },
         Err(e) => {
-            error!({error = ?e}, "failed to create /tmp/scripts dir")
+            error!(error = %e, "Failed to create USB manager");
+            tx.send(Event::Notification(NotificationEvent::Show(
+                "Failed to start USB session".to_string(),
+            )))
+            .ok();
+            schedule_task(
+                TaskId::Exit,
+                Event::Select(EntryId::Restart),
+                Duration::from_secs(3),
+                tx,
+                tasks,
+            );
         }
-    }
-
-    Command::new("scripts/usb-enable.sh").status().ok();
-    if let Err(e) = env::set_current_dir("/tmp") {
-        error!(error = %e, "failed to set working directory to /tmp before USB share");
     }
 }
 
-/// Runs `usb-disable.sh` to remount `/mnt/onboard`, restores the working
-/// directory, reloads settings, and triggers reboot or restart.
+/// Disables USB sharing, restores the working directory, and triggers
+/// reboot or restart.
 ///
-/// The `usb-disable.sh` script remounts `/mnt/onboard`. The working directory
-/// is restored to the original path (now valid again).
+/// Disables USB mass storage mode. The working directory is restored to the
+/// original path (now valid again after remounting).
 ///
-/// `context.shared` is not set back to false, as the app is going to be restarted
-/// `context.shared` is not set back to false, as the app is going to be restarted
-/// anyway. Leaving this as true helps the exit logic to not save settings after usb share.
-/// Ensuring that if there were any manual edits during the share, that these
+/// `context.shared` is not set back to false, as the app is going to be
+/// restarted anyway. Leaving this as true helps the exit logic to not save
+/// settings after USB share, ensuring that manual edits during the share
 /// are not lost.
 ///
-/// Finally, checks for `KoboRoot.tgz` to determine whether to reboot (update pending) or restart the app.
+/// Finally, checks for `KoboRoot.tgz` to determine whether to reboot
+/// (update pending) or restart the app.
 #[inline]
 fn handle_usb_unshare(startup_cwd: &Option<PathBuf>, tx: &Sender<Event>) {
-    info!("USB unplugged after sharing; running usb-disable.sh");
-    let usb_disable_status = Command::new("scripts/usb-disable.sh").status();
-    debug!(status = ?usb_disable_status, "usb-disable.sh exited");
+    info!("USB unplugged after sharing; disabling USB mass storage");
+
+    match CURRENT_DEVICE.usb_manager() {
+        Ok(usb_manager) => match usb_manager.disable() {
+            Ok(()) => {
+                info!("USB mass storage disabled successfully");
+            }
+            Err(e) => {
+                error!(error = %e, "Failed to disable USB sharing, triggering reboot");
+                tx.send(Event::Select(EntryId::Reboot)).ok();
+                return;
+            }
+        },
+        Err(e) => {
+            error!(error = %e, "Failed to create USB manager, triggering reboot");
+            tx.send(Event::Select(EntryId::Reboot)).ok();
+            return;
+        }
+    }
 
     if let Some(cwd) = startup_cwd.as_ref() {
         if let Err(e) = env::set_current_dir(cwd) {
@@ -377,15 +415,8 @@ fn handle_usb_unshare(startup_cwd: &Option<PathBuf>, tx: &Sender<Event>) {
         }
     }
 
-    let onboard_mounted = std::fs::read_to_string("/proc/mounts")
-        .map(|m| m.contains(" /mnt/onboard "))
-        .unwrap_or(false);
-    let db_exists = Path::new(DB_FILENAME).exists();
     let update_bundle_exists = Path::new(KOBO_UPDATE_BUNDLE).exists();
-    info!(
-        onboard_mounted,
-        db_exists, update_bundle_exists, "filesystem state after usb-disable.sh"
-    );
+    info!(update_bundle_exists, "filesystem state after USB disable");
 
     if update_bundle_exists {
         info!("KoboRoot.tgz detected; triggering reboot");
@@ -999,7 +1030,7 @@ pub fn run() -> Result<(), Error> {
                     continue;
                 }
 
-                start_usb_share(&mut context);
+                start_usb_share(&tx, &mut tasks, &mut context);
             }
             Event::Gesture(ge) => match ge {
                 GestureEvent::HoldButtonLong(ButtonCode::Power) => {
@@ -1535,9 +1566,9 @@ pub fn run() -> Result<(), Error> {
     };
 
     if save_settings {
-        manager
-            .save(&context.settings)
-            .context("can't save settings")?;
+        if let Err(e) = manager.save(&context.settings) {
+            tracing::error!(error = ?e, "failed to save settings");
+        }
     }
 
     match exit_status {

@@ -5,6 +5,7 @@ pub mod assets;
 pub mod battery;
 pub mod color;
 pub mod context;
+pub mod crypto;
 pub mod db;
 pub mod device;
 mod dictionary;
@@ -26,6 +27,7 @@ pub mod settings;
 #[cfg(feature = "otel")]
 pub mod telemetry;
 mod unit;
+pub mod version;
 pub mod view;
 
 pub use anyhow;

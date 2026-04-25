@@ -13,7 +13,7 @@
 
 use std::path::Path;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::Args;
 
 use super::util::thirdparty::MUPDF_VERSION;
@@ -51,6 +51,9 @@ pub fn run(args: SetupNativeArgs) -> Result<()> {
 }
 
 pub fn ensure_native_artifacts(root: &Path, force: bool) -> Result<()> {
+    thirdparty::download_libraries(&root.join("thirdparty"), &["libwebp"])?;
+    build_libwebp_native(root)?;
+
     ensure_mupdf_sources(root, force)?;
     build_mupdf_wrapper_native_if_needed(root)?;
 
@@ -62,6 +65,91 @@ pub fn ensure_native_artifacts(root: &Path, force: bool) -> Result<()> {
     }
 
     link_mupdf_artifacts(root)?;
+
+    Ok(())
+}
+
+/// Builds libwebp from source for native development.
+///
+/// # Why we combine static archives manually
+///
+/// libwebp's build system creates separate `.a` files in sub-directories
+/// (`dec/`, `dsp/`, `enc/`, `utils/`) but does **not** assemble them into a
+/// single `src/.libs/libwebp.a` when building static-only.  We extract the
+/// individual object files from each sub-archive and repack them into one
+/// unified `libwebp.a` so that downstream `build.rs` scripts can simply link
+/// with `-lwebp`.
+pub fn build_libwebp_native(root: &Path) -> Result<()> {
+    let libwebp_dir = root.join("thirdparty/libwebp");
+    if libwebp_dir.join("src/.libs/libwebp.a").exists() {
+        println!("libwebp already built for native.");
+        return Ok(());
+    }
+
+    println!("Building libwebp for native development…");
+
+    if !libwebp_dir.join("configure").exists() {
+        cmd::run("sh", &["autogen.sh"], &libwebp_dir, &[("NOCONFIGURE", "1")])
+            .context("failed to run autogen.sh for libwebp")?;
+    }
+
+    cmd::run(
+        "./configure",
+        &[
+            "--disable-shared",
+            "--enable-static",
+            "--disable-libwebpmux",
+            "--enable-libwebpdecoder",
+            "--enable-libwebpdemux",
+            "--disable-webp-tools",
+            "--with-pic",
+        ],
+        &libwebp_dir,
+        &[],
+    )
+    .context("failed to configure libwebp")?;
+
+    cmd::run("make", &["-j4"], &libwebp_dir, &[]).context("failed to build libwebp")?;
+
+    combine_libwebp_static_archives(&libwebp_dir)?;
+
+    println!("✓ libwebp built successfully");
+    Ok(())
+}
+
+/// Extracts sub-archives from a static libwebp build and repacks them into
+/// a single `src/.libs/libwebp.a`.
+///
+/// See [`build_libwebp_native`] for why this is necessary.
+fn combine_libwebp_static_archives(libwebp_dir: &Path) -> Result<()> {
+    let libs_dir = libwebp_dir.join("src/.libs");
+    std::fs::create_dir_all(&libs_dir).context("failed to create src/.libs for libwebp")?;
+
+    let sublibs = [
+        "dec/.libs/libwebpdecode.a",
+        "dsp/.libs/libwebpdsp.a",
+        "enc/.libs/libwebpencode.a",
+        "utils/.libs/libwebputils.a",
+    ];
+
+    let mut objects = vec![];
+    for sublib in &sublibs {
+        let path = libwebp_dir.join("src").join(sublib);
+        let extract_dir = libs_dir.join(format!("extract_{}", sublib.replace('/', "_")));
+        std::fs::create_dir_all(&extract_dir)?;
+        cmd::run("ar", &["x", path.to_str().unwrap()], &extract_dir, &[])
+            .with_context(|| format!("failed to extract objects from {}", path.display()))?;
+        for entry in std::fs::read_dir(&extract_dir)? {
+            objects.push(entry?.path());
+        }
+    }
+
+    let libwebp_a = libs_dir.join("libwebp.a");
+    let mut ar_args: Vec<&str> = vec!["rcs", libwebp_a.to_str().unwrap()];
+    for obj in &objects {
+        ar_args.push(obj.to_str().unwrap());
+    }
+    cmd::run("ar", &ar_args, &libwebp_dir, &[]).context("failed to create combined libwebp.a")?;
 
     Ok(())
 }
@@ -256,7 +344,7 @@ fn link_mupdf_artifacts(root: &Path) -> Result<()> {
 
     let libmupdf = release_dir.join("libmupdf.a");
     if !libmupdf.exists() {
-        bail!("libmupdf.a not found after build — check MuPDF build output");
+        anyhow::bail!("libmupdf.a not found after build -- check MuPDF build output");
     }
 
     symlink_force(&libmupdf, &target_dir.join("libmupdf.a"))?;

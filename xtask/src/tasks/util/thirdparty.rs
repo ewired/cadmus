@@ -37,6 +37,8 @@ pub const SONAMES: &[&str] = &[
     "libfreetype.so",
     "libharfbuzz.so",
     "libgumbo.so",
+    "libwebp.so",
+    "libwebpdemux.so",
     "libdjvulibre.so",
     "libmupdf.so",
 ];
@@ -132,9 +134,19 @@ pub const FREETYPE2_VERSION: &str = "2.14.1";
 pub const HARFBUZZ_VERSION: &str = "14.2.0";
 /// Gumbo version, derived from the archive URL.
 pub const GUMBO_VERSION: &str = "0.10.1";
+/// libwebp version, derived from the archive URL.
+pub const LIBWEBP_VERSION: &str = "1.2.3";
 
 /// MuPDF version, tracked via GitHub Releases on `ArtifexSoftware/mupdf-downloads`.
 pub const MUPDF_VERSION: &str = "1.27.0";
+
+const MUPDF_WEBP_PATCHES: &[&str] = &[
+    "webp-compressed-buffer-kobo.patch",
+    "webp-image-kobo.patch",
+    "webp-load-webp-kobo.patch",
+    "webp-image-c-kobo.patch",
+    "webp-mucbz-kobo.patch",
+];
 
 /// All libraries in dependency order for building.
 const LIBRARY_NAMES: &[&str] = &[
@@ -144,6 +156,7 @@ const LIBRARY_NAMES: &[&str] = &[
     "libjpeg",
     "openjpeg",
     "jbig2dec",
+    "libwebp",
     "freetype2",
     "harfbuzz",
     "gumbo",
@@ -201,6 +214,10 @@ pub fn library_source(name: &str) -> Result<LibrarySource> {
         "gumbo" => Ok(LibrarySource::Tarball(format!(
             "https://github.com/google/gumbo-parser/archive/v{v}.tar.gz",
             v = GUMBO_VERSION
+        ))),
+        "libwebp" => Ok(LibrarySource::Tarball(format!(
+            "https://github.com/webmproject/libwebp/archive/refs/tags/v{v}.tar.gz",
+            v = LIBWEBP_VERSION
         ))),
         "djvulibre" => Ok(LibrarySource::Tarball(format!(
             "https://github.com/barak/djvulibre/archive/refs/tags/release.{v}.tar.gz",
@@ -418,6 +435,13 @@ pub fn build_libraries(thirdparty_dir: &Path, names: &[&str]) -> Result<()> {
         if patch.exists() {
             cmd::run("patch", &["-p", "1", "-i", "kobo.patch"], &lib_dir, &[])
                 .with_context(|| format!("failed to apply kobo.patch for {name}"))?;
+        }
+
+        if name == "mupdf" && !lib_dir.join("source/fitz/load-webp.c").exists() {
+            for patch_name in MUPDF_WEBP_PATCHES {
+                cmd::run("patch", &["-p", "1", "-i", patch_name], &lib_dir, &[])
+                    .with_context(|| format!("failed to apply {patch_name}"))?;
+            }
         }
 
         let envs = [

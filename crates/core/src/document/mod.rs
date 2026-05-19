@@ -196,6 +196,12 @@ pub fn guess_kind<P: AsRef<Path>>(path: P) -> Result<&'static str, Error> {
         return Ok("pdf");
     } else if &magic == b"AT&T" {
         return Ok("djvu");
+    } else if &magic == b"RIFF" {
+        let mut webp_magic = [0; 4];
+        file.read_exact_at(&mut webp_magic, 8)?;
+        if &webp_magic == b"WEBP" {
+            return Ok("webp");
+        }
     }
 
     Err(format_err!("Unknown file type"))

@@ -85,7 +85,8 @@ pub fn ensure_mupdf_sources(root: &Path, force: bool) -> Result<()> {
 
     let mupdf_dir = root.join("thirdparty/mupdf");
     if mupdf_dir.exists() {
-        std::fs::remove_dir_all(&mupdf_dir).context("failed to remove stale thirdparty/mupdf")?;
+        thirdparty::clean_untracked(&mupdf_dir)
+            .context("failed to clean untracked files from thirdparty/mupdf")?;
     }
 
     thirdparty::download_libraries(&root.join("thirdparty"), &["mupdf"])

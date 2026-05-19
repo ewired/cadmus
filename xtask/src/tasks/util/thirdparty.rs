@@ -413,7 +413,7 @@ pub fn build_libraries(thirdparty_dir: &Path, names: &[&str]) -> Result<()> {
 
 /// Removes untracked files from a directory using `git ls-files`, falling back
 /// to removing and recreating the directory when git is unavailable.
-fn clean_untracked(dir: &Path) -> Result<()> {
+pub fn clean_untracked(dir: &Path) -> Result<()> {
     let result = std::process::Command::new("git")
         .args(["ls-files", "-o", "--directory", "-z"])
         .arg(dir.file_name().unwrap_or(dir.as_os_str()))

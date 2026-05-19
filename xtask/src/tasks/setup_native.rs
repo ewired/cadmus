@@ -40,22 +40,28 @@ pub struct SetupNativeArgs {
 pub fn run(args: SetupNativeArgs) -> Result<()> {
     let root = workspace::root()?;
 
-    ensure_mupdf_sources(&root, args.force)?;
-    build_mupdf_wrapper_native_if_needed(&root)?;
-
-    if native_mupdf_ready(&root) {
-        println!("Native MuPDF build already present.");
-    } else {
-        build_mupdf_native(&root)?;
-        write_native_build_marker(&root)?;
-    }
-
-    link_mupdf_artifacts(&root)?;
+    ensure_native_artifacts(&root, args.force)?;
 
     println!("\nNative setup complete!");
     println!("You can now run:");
     println!("  cargo test          - Run tests");
     println!("  cargo xtask build-kobo  - Build for Kobo (Linux & macOS)");
+
+    Ok(())
+}
+
+pub fn ensure_native_artifacts(root: &Path, force: bool) -> Result<()> {
+    ensure_mupdf_sources(root, force)?;
+    build_mupdf_wrapper_native_if_needed(root)?;
+
+    if native_mupdf_ready(root) {
+        println!("Native MuPDF build already present.");
+    } else {
+        build_mupdf_native(root)?;
+        write_native_build_marker(root)?;
+    }
+
+    link_mupdf_artifacts(root)?;
 
     Ok(())
 }
@@ -66,28 +72,28 @@ pub fn run(args: SetupNativeArgs) -> Result<()> {
 /// If the version header is missing or reports a different version the
 /// existing directory is removed and the sources are re-downloaded.
 pub fn ensure_mupdf_sources(root: &Path, force: bool) -> Result<()> {
-    let version_header = root.join("thirdparty/mupdf/include/mupdf/fitz/version.h");
-
+    let mupdf_dir = root.join("thirdparty/mupdf");
+    let version_header = mupdf_dir.join("include/mupdf/fitz/version.h");
     let current_version = read_mupdf_version(&version_header);
 
-    if !force && current_version.as_deref() == Some(MUPDF_VERSION) {
+    if force || current_version.as_deref() != Some(MUPDF_VERSION) {
+        if let Some(v) = &current_version {
+            println!("MuPDF version mismatch: have '{v}', need '{MUPDF_VERSION}'");
+        }
+
+        println!("Downloading MuPDF {MUPDF_VERSION} sources…");
+
+        if mupdf_dir.exists() {
+            thirdparty::clean_untracked(&mupdf_dir)
+                .context("failed to clean untracked files from thirdparty/mupdf")?;
+        }
+
+        thirdparty::download_libraries(&root.join("thirdparty"), &["mupdf"])?;
+    } else {
         println!("MuPDF {MUPDF_VERSION} already present.");
-        return Ok(());
     }
 
-    if let Some(v) = &current_version {
-        println!("MuPDF version mismatch: have '{v}', need '{MUPDF_VERSION}'");
-    }
-
-    println!("Downloading MuPDF {MUPDF_VERSION} sources…");
-
-    let mupdf_dir = root.join("thirdparty/mupdf");
-    if mupdf_dir.exists() {
-        thirdparty::clean_untracked(&mupdf_dir)
-            .context("failed to clean untracked files from thirdparty/mupdf")?;
-    }
-
-    thirdparty::download_libraries(&root.join("thirdparty"), &["mupdf"])
+    Ok(())
 }
 
 /// Reads the MuPDF version string from the version header file.

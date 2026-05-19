@@ -141,12 +141,13 @@ pub const LIBWEBP_VERSION: &str = "1.2.3";
 pub const MUPDF_VERSION: &str = "1.27.0";
 
 const MUPDF_WEBP_PATCHES: &[&str] = &[
-    "webp-compressed-buffer-kobo.patch",
-    "webp-image-kobo.patch",
-    "webp-load-webp-kobo.patch",
-    "webp-image-c-kobo.patch",
-    "webp-mucbz-kobo.patch",
+    "webp-upstream-697749-kobo.patch", // verbatim KOReader upstream
+    "webp-image-h-kobo.patch",         // image.h declarations (our wrapper needs these)
+    "webp-load-webp-deviations-kobo.patch", // Cadmus deviations: demux cleanup, animation, epsilon, yres, ICC warning
 ];
+
+/// Marker file written after all MuPDF WebP patches succeed.
+const WEBP_PATCHED_MARKER: &str = ".webp-patched";
 
 /// All libraries in dependency order for building.
 const LIBRARY_NAMES: &[&str] = &[
@@ -437,11 +438,8 @@ pub fn build_libraries(thirdparty_dir: &Path, names: &[&str]) -> Result<()> {
                 .with_context(|| format!("failed to apply kobo.patch for {name}"))?;
         }
 
-        if name == "mupdf" && !lib_dir.join("source/fitz/load-webp.c").exists() {
-            for patch_name in MUPDF_WEBP_PATCHES {
-                cmd::run("patch", &["-p", "1", "-i", patch_name], &lib_dir, &[])
-                    .with_context(|| format!("failed to apply {patch_name}"))?;
-            }
+        if name == "mupdf" {
+            apply_mupdf_webp_patches_if_needed(&lib_dir)?;
         }
 
         let envs = [
@@ -462,6 +460,29 @@ pub fn build_libraries(thirdparty_dir: &Path, names: &[&str]) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Applies Cadmus' MuPDF WebP patch series unless it was already applied.
+///
+/// Returns `true` when patches were applied during this call.
+pub fn apply_mupdf_webp_patches_if_needed(mupdf_dir: &Path) -> Result<bool> {
+    if mupdf_webp_patches_applied(mupdf_dir) {
+        println!("MuPDF WebP patches already applied.");
+        Ok(false)
+    } else {
+        println!("Applying MuPDF WebP patches…");
+        for patch in MUPDF_WEBP_PATCHES {
+            cmd::run("patch", &["-p", "1", "-i", patch], mupdf_dir, &[])
+                .with_context(|| format!("failed to apply {patch}"))?;
+        }
+
+        write_marker(mupdf_dir, WEBP_PATCHED_MARKER, "mupdf", "WebP patch")?;
+        Ok(true)
+    }
+}
+
+fn mupdf_webp_patches_applied(mupdf_dir: &Path) -> bool {
+    mupdf_dir.join(WEBP_PATCHED_MARKER).exists()
 }
 
 /// Removes untracked files from a directory using `git ls-files`, falling back

@@ -54,15 +54,20 @@ pub fn ensure_native_artifacts(root: &Path, force: bool) -> Result<()> {
     thirdparty::download_libraries(&root.join("thirdparty"), &["libwebp"])?;
     build_libwebp_native(root)?;
 
-    ensure_mupdf_sources(root, force)?;
-    build_mupdf_wrapper_native_if_needed(root)?;
+    let mupdf_patched = ensure_mupdf_sources_with_webp_patches(root, force)?;
+    if mupdf_patched {
+        remove_native_wrapper_artifact(root)?;
+    }
 
-    if native_mupdf_ready(root) {
-        println!("Native MuPDF build already present.");
-    } else {
+    let rebuild_mupdf = mupdf_patched || !native_mupdf_ready(root);
+    if rebuild_mupdf {
         build_mupdf_native(root)?;
         write_native_build_marker(root)?;
+    } else {
+        println!("Native MuPDF build already present.");
     }
+
+    build_mupdf_wrapper_native_if_needed(root)?;
 
     link_mupdf_artifacts(root)?;
 
@@ -155,11 +160,15 @@ fn combine_libwebp_static_archives(libwebp_dir: &Path) -> Result<()> {
 }
 
 /// Ensures MuPDF sources at the required version are present in
-/// `thirdparty/mupdf/`.
+/// `thirdparty/mupdf/` and that Cadmus' WebP patch series is applied.
 ///
 /// If the version header is missing or reports a different version the
 /// existing directory is removed and the sources are re-downloaded.
 pub fn ensure_mupdf_sources(root: &Path, force: bool) -> Result<()> {
+    ensure_mupdf_sources_with_webp_patches(root, force).map(|_| ())
+}
+
+fn ensure_mupdf_sources_with_webp_patches(root: &Path, force: bool) -> Result<bool> {
     let mupdf_dir = root.join("thirdparty/mupdf");
     let version_header = mupdf_dir.join("include/mupdf/fitz/version.h");
     let current_version = read_mupdf_version(&version_header);
@@ -181,7 +190,23 @@ pub fn ensure_mupdf_sources(root: &Path, force: bool) -> Result<()> {
         println!("MuPDF {MUPDF_VERSION} already present.");
     }
 
-    Ok(())
+    apply_mupdf_webp_patches_if_needed(&mupdf_dir)
+}
+
+fn apply_mupdf_webp_patches_if_needed(mupdf_dir: &Path) -> Result<bool> {
+    let patched = thirdparty::apply_mupdf_webp_patches_if_needed(mupdf_dir)?;
+    if patched {
+        remove_native_build_marker(mupdf_dir);
+    }
+
+    Ok(patched)
+}
+
+fn remove_native_build_marker(mupdf_dir: &Path) {
+    let marker = mupdf_dir.join(NATIVE_BUILT_MARKER);
+    if marker.exists() {
+        std::fs::remove_file(&marker).ok();
+    }
 }
 
 /// Reads the MuPDF version string from the version header file.
@@ -252,6 +277,24 @@ fn build_mupdf_wrapper_native_if_needed(root: &Path) -> Result<()> {
     mupdf_wrapper::build_native_if_needed(root)
 }
 
+fn remove_native_wrapper_artifact(root: &Path) -> Result<()> {
+    let platform_dir = if cfg!(target_os = "macos") {
+        "Darwin"
+    } else {
+        "Linux"
+    };
+    let lib = root.join(format!(
+        "target/mupdf_wrapper/{platform_dir}/libmupdf_wrapper.a"
+    ));
+
+    if lib.exists() {
+        std::fs::remove_file(&lib)
+            .with_context(|| format!("failed to remove stale {}", lib.display()))?;
+    }
+
+    Ok(())
+}
+
 /// Compiles MuPDF using system libraries for the native platform.
 fn build_mupdf_native(root: &Path) -> Result<()> {
     println!("Building MuPDF for native development…");
@@ -272,7 +315,16 @@ fn build_mupdf_native(root: &Path) -> Result<()> {
     let sys_cflags = collect_system_cflags()?;
     let xcflags = format!(
         "-DFZ_ENABLE_ICC=0 -DFZ_ENABLE_SPOT_RENDERING=0 \
-         -DFZ_ENABLE_ODT_OUTPUT=0 -DFZ_ENABLE_OCR_OUTPUT=0 {sys_cflags}"
+         -DFZ_ENABLE_ODT_OUTPUT=0 -DFZ_ENABLE_OCR_OUTPUT=0 \
+         -DHAVE_WEBP=1 -I{root}/thirdparty/libwebp/src {sys_cflags}",
+        root = root.display()
+    );
+
+    // Linker flags for libwebp static libraries
+    let xlibs = format!(
+        "-L{root}/thirdparty/libwebp/src/.libs -lwebp \
+         -L{root}/thirdparty/libwebp/src/demux/.libs -lwebpdemux",
+        root = root.display()
     );
 
     cmd::run(
@@ -288,6 +340,7 @@ fn build_mupdf_native(root: &Path) -> Result<()> {
             "commercial=no",
             "USE_SYSTEM_LIBS=yes",
             &format!("XCFLAGS={xcflags}"),
+            &format!("XLIBS={xlibs}"),
             "libs",
         ],
         &mupdf_dir,
@@ -309,6 +362,7 @@ fn collect_system_cflags() -> Result<String> {
         "harfbuzz",
         "libopenjp2",
         "libjpeg",
+        "libwebp",
         "zlib",
         "jbig2dec",
         "gumbo",

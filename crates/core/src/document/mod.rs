@@ -290,7 +290,11 @@ pub fn open<P: AsRef<Path>>(path: P) -> Option<Box<dyn Document>> {
         | FileExtension::Mobi
         | FileExtension::Txt
         | FileExtension::Xps
-        | FileExtension::Oxps => {
+        | FileExtension::Oxps
+        | FileExtension::Webp
+        | FileExtension::Png
+        | FileExtension::Jpg
+        | FileExtension::Jpeg => {
             let opener = PdfOpener::new();
             if opener.is_none() {
                 warn!(path = %path.as_ref().display(), "Failed to create PdfOpener");

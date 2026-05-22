@@ -181,6 +181,20 @@ pub fn file_kind<P: AsRef<Path>>(path: P) -> Option<FileExtension> {
         .and_then(|s| s.parse().ok())
 }
 
+/// Sniff the file type by reading magic bytes from the start of `path`.
+///
+/// # Supported formats
+///
+/// | Magic bytes | Offset | Format |
+/// |-------------|--------|--------|
+/// | `PK\x03\x04` + `mimetypeapplication/epub+zip` | 0 / 30 | `epub` |
+/// | `%PDF` | 0 | `pdf` |
+/// | `AT&T` | 0 | `djvu` |
+/// | `RIFF` + `WEBP` | 0 / 8 | `webp` |
+///
+/// WebP files start with `"RIFF"` and have `"WEBP"` at bytes 8–11.
+/// `RIFF` alone is not enough because many non-WebP formats (WAV, AVI, …)
+/// are also RIFF containers.
 pub fn guess_kind<P: AsRef<Path>>(path: P) -> Result<&'static str, Error> {
     let file = File::open(path.as_ref())?;
     let mut magic = [0; 4];

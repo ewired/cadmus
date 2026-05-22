@@ -7,6 +7,7 @@ use lazy_static::lazy_static;
 use once_cell::sync::OnceCell;
 use std::env;
 use std::fmt::Debug;
+use std::path::PathBuf;
 
 mod error;
 mod metadata;
@@ -280,6 +281,47 @@ impl Device {
         self.wifi_manager
             .get_or_try_init(crate::device::wifi::create_wifi_manager)
             .map(|b| b.as_ref())
+    }
+
+    /// Returns the path to the device-managed tmp directory.
+    ///
+    /// The path is determined at compile time and does not depend on the
+    /// process's current working directory, so it remains stable even when
+    /// callers change `cwd` (for example during USB sharing).
+    ///
+    /// - Normal device builds: `/mnt/onboard/.adds/cadmus/tmp`
+    /// - Test device builds: `/mnt/onboard/.adds/cadmus-tst/tmp`
+    /// - Emulator builds: `/tmp/.adds/cadmus/tmp` (or `cadmus-tst` with `test`)
+    pub fn tmp_dir(&self) -> PathBuf {
+        #[cfg(not(feature = "test"))]
+        const TMP_RELATIVE_PATH: &str = ".adds/cadmus/tmp";
+        #[cfg(feature = "test")]
+        const TMP_RELATIVE_PATH: &str = ".adds/cadmus-tst/tmp";
+
+        #[cfg(feature = "emulator")]
+        return PathBuf::from("/tmp").join(TMP_RELATIVE_PATH);
+
+        #[cfg(not(feature = "emulator"))]
+        return PathBuf::from(crate::settings::INTERNAL_CARD_ROOT).join(TMP_RELATIVE_PATH);
+    }
+
+    /// Removes stale contents left by a previous run and recreates the tmp
+    /// directory.
+    ///
+    /// `Device` owns the lifecycle of the tmp directory: callers may assume
+    /// the directory exists after this runs and should not create it
+    /// themselves. Call this once at startup before any feature that writes
+    /// to `tmp_dir()` to ensure a clean slate.
+    pub fn clean_tmp_dir(&self) {
+        let dir = self.tmp_dir();
+        if let Err(e) = std::fs::remove_dir_all(&dir) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::warn!(path = ?dir, error = %e, "Failed to clean tmp dir");
+            }
+        }
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            tracing::warn!(path = ?dir, error = %e, "Failed to create tmp dir");
+        }
     }
 
     /// Returns the number of color samples for the device screen.

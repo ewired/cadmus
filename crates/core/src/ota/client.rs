@@ -7,7 +7,7 @@ use crate::version::GitVersion;
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use std::fs::File;
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use zip::ZipArchive;
 
 #[cfg(all(not(test), not(feature = "emulator")))]
@@ -20,6 +20,7 @@ use crate::settings::INTERNAL_CARD_ROOT;
 /// extraction, and deploying `KoboRoot.tgz` to the Kobo device.
 pub struct OtaClient {
     github: GithubClient,
+    tmp_dir: PathBuf,
 }
 
 /// Indicates where artifacts were expected but not found.
@@ -133,8 +134,8 @@ impl OtaClient {
     /// # Errors
     ///
     /// Returns `OtaError::TlsConfig` if the underlying HTTP client fails to build.
-    pub fn new(github: GithubClient) -> Self {
-        Self { github }
+    pub fn new(github: GithubClient, tmp_dir: PathBuf) -> Self {
+        Self { github, tmp_dir }
     }
 
     /// Downloads the build artifact from a GitHub pull request.
@@ -144,7 +145,7 @@ impl OtaClient {
     /// 2. Fetches PR metadata to get the commit SHA
     /// 3. Finds the associated "Cargo" workflow run
     /// 4. Locates artifacts matching "cadmus-kobo-pr*" pattern
-    /// 5. Downloads the artifact ZIP file to `/tmp/cadmus-ota-{pr_number}.zip`
+    /// 5. Downloads the artifact ZIP file to `tmp_dir/cadmus-ota-{pr_number}.zip`
     ///
     /// GitHub authentication is required for this operation.
     ///
@@ -159,7 +160,7 @@ impl OtaClient {
     ///
     /// # Errors
     ///
-    /// * `OtaError::InsufficientSpace` - Less than 100MB available in /tmp
+    /// * `OtaError::InsufficientSpace` - Less than 100MB available in the configured temp directory
     /// * `OtaError::NoToken` - GitHub token not configured
     /// * `OtaError::PrNotFound` - PR number doesn't exist in repository
     /// * `OtaError::ArtifactsNotFound` - No matching build artifacts found for the PR
@@ -174,7 +175,7 @@ impl OtaClient {
     where
         F: FnMut(OtaProgress),
     {
-        check_disk_space("/tmp")?;
+        check_disk_space(&self.tmp_dir)?;
         verify_scopes(&self.github)?;
 
         progress_callback(OtaProgress::CheckingPr);
@@ -272,7 +273,7 @@ impl OtaClient {
             "Found artifact"
         );
 
-        let download_path = PathBuf::from(format!("/tmp/cadmus-ota-{}.zip", pr_number));
+        let download_path = self.tmp_dir.join(format!("cadmus-ota-{}.zip", pr_number));
 
         self.download_artifact_to_path(&artifact, &download_path, &mut progress_callback)?;
 
@@ -290,7 +291,7 @@ impl OtaClient {
     /// 1. Verifies sufficient disk space (100MB required)
     /// 2. Queries GitHub API for the latest successful `cargo.yml` workflow run on the default branch
     /// 3. Locates artifacts matching "cadmus-kobo-{sha}" pattern (or "cadmus-kobo-test-{sha}" with `test` feature)
-    /// 4. Downloads the artifact ZIP file to `/tmp/cadmus-ota-{sha}.zip`
+    /// 4. Downloads the artifact ZIP file to `tmp_dir/cadmus-ota-{sha}.zip`
     ///
     /// GitHub authentication is required for this operation.
     ///
@@ -304,7 +305,7 @@ impl OtaClient {
     ///
     /// # Errors
     ///
-    /// * `OtaError::InsufficientSpace` - Less than 100MB available in /tmp
+    /// * `OtaError::InsufficientSpace` - Less than 100MB available in the configured temp directory
     /// * `OtaError::NoToken` - GitHub token not configured
     /// * `OtaError::ArtifactsNotFound` - No matching build artifacts found for default branch
     /// * `OtaError::Api` - GitHub API request failed
@@ -317,7 +318,7 @@ impl OtaClient {
     where
         F: FnMut(OtaProgress),
     {
-        check_disk_space("/tmp")?;
+        check_disk_space(&self.tmp_dir)?;
         verify_scopes(&self.github)?;
 
         progress_callback(OtaProgress::FindingLatestBuild);
@@ -383,7 +384,7 @@ impl OtaClient {
             "Found default branch artifact"
         );
 
-        let download_path = PathBuf::from(format!("/tmp/cadmus-ota-{}.zip", short_sha));
+        let download_path = self.tmp_dir.join(format!("cadmus-ota-{}.zip", short_sha));
 
         self.download_artifact_to_path(&artifact, &download_path, &mut progress_callback)?;
 
@@ -401,7 +402,7 @@ impl OtaClient {
     /// 1. Verifies sufficient disk space (100MB required)
     /// 2. Fetches the latest release from GitHub API
     /// 3. Locates the `KoboRoot.tgz` asset in the release
-    /// 4. Downloads the file to `/tmp/cadmus-ota-stable-release.tgz`
+    /// 4. Downloads the file to `tmp_dir/cadmus-ota-stable-release.tgz`
     ///
     /// GitHub authentication is not required for this operation as release
     /// assets are downloaded from public URLs without Authorization headers.
@@ -416,7 +417,7 @@ impl OtaClient {
     ///
     /// # Errors
     ///
-    /// * `OtaError::InsufficientSpace` - Less than 100MB available in /tmp
+    /// * `OtaError::InsufficientSpace` - Less than 100MB available in the configured temp directory
     /// * `OtaError::Api` - GitHub API request failed
     /// * `OtaError::Request` - Network communication failed
     /// * `OtaError::ArtifactsNotFound` - KoboRoot.tgz not found in latest release
@@ -429,7 +430,7 @@ impl OtaClient {
     where
         F: FnMut(OtaProgress),
     {
-        check_disk_space("/tmp")?;
+        check_disk_space(&self.tmp_dir)?;
 
         progress_callback(OtaProgress::FindingLatestBuild);
         tracing::info!("Starting stable release download");
@@ -482,7 +483,7 @@ impl OtaClient {
             "Found release asset"
         );
 
-        let download_path = PathBuf::from("/tmp/cadmus-ota-stable-release.tgz");
+        let download_path = self.tmp_dir.join("cadmus-ota-stable-release.tgz");
 
         self.download_release_asset(asset, &download_path, &mut progress_callback)?;
 
@@ -516,7 +517,7 @@ impl OtaClient {
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// # rustls::crypto::ring::default_provider().install_default().ok();
     /// # let github = GithubClient::new(None)?;
-    /// # let client = OtaClient::new(github);
+    /// # let client = OtaClient::new(github, std::path::PathBuf::from("/tmp"));
     /// let version = client.fetch_latest_release_version()?;
     /// println!("Latest version: {}", version);
     /// # Ok(())
@@ -549,6 +550,8 @@ impl OtaClient {
     /// Used when the artifact is already in the correct format (e.g., stable releases
     /// that are distributed as bare KoboRoot.tgz files).
     ///
+    /// On success, the source file is deleted as a best-effort cleanup step.
+    ///
     /// # Arguments
     ///
     /// * `kobo_root_path` - Path to the KoboRoot.tgz file to deploy
@@ -564,55 +567,54 @@ impl OtaClient {
     pub fn deploy(&self, kobo_root_path: PathBuf) -> Result<PathBuf, OtaError> {
         tracing::info!(path = ?kobo_root_path, "Deploying KoboRoot.tgz");
 
-        let mut kobo_root_data = Vec::new();
-        {
-            let mut file = File::open(&kobo_root_path)?;
-            file.read_to_end(&mut kobo_root_data)?;
-        }
+        let deploy_path = self.deploy_path();
+        self.ensure_deploy_dir(&deploy_path)?;
+
+        let mut src = File::open(&kobo_root_path)?;
+        let mut dst = File::create(&deploy_path)?;
+        let bytes_copied = std::io::copy(&mut src, &mut dst)?;
 
         tracing::debug!(
-            bytes = kobo_root_data.len(),
-            path = ?kobo_root_path,
-            "Read KoboRoot.tgz"
+            bytes = bytes_copied,
+            src = ?kobo_root_path,
+            dst = ?deploy_path,
+            "Streamed KoboRoot.tgz to deploy path"
         );
 
-        self.deploy_bytes(&kobo_root_data)
+        if kobo_root_path != deploy_path {
+            if let Err(e) = std::fs::remove_file(&kobo_root_path) {
+                tracing::error!(path = ?kobo_root_path, error = %e, "Failed to remove source file");
+            }
+        }
+
+        tracing::info!(path = ?deploy_path, "Update deployed successfully");
+        Ok(deploy_path)
     }
 
-    /// Deploys KoboRoot.tgz data to the appropriate location.
+    /// Returns the platform-specific deployment path for KoboRoot.tgz.
     ///
-    /// Writes the provided data to the deployment path determined by the build configuration:
-    /// - Test builds: temp directory
-    /// - Emulator builds: /tmp/.kobo/KoboRoot.tgz
-    /// - Production builds: {INTERNAL_CARD_ROOT}/.kobo/KoboRoot.tgz
-    ///
-    /// # Arguments
-    ///
-    /// * `data` - The KoboRoot.tgz file contents to deploy
-    ///
-    /// # Returns
-    ///
-    /// The deployment path where KoboRoot.tgz was written.
-    ///
-    /// # Errors
-    ///
-    /// * `OtaError::Io` - Failed to create directories or write deployment file
-    fn deploy_bytes(&self, data: &[u8]) -> Result<PathBuf, OtaError> {
+    /// | Build context        | Path                                              |
+    /// |----------------------|---------------------------------------------------|
+    /// | During `cargo test`  | `<temp_dir>/test-kobo-deployment/KoboRoot.tgz`    |
+    /// | Emulator builds      | `/tmp/.kobo/KoboRoot.tgz`                         |
+    /// | Kobo builds          | `{INTERNAL_CARD_ROOT}/.kobo/KoboRoot.tgz`         |
+    fn deploy_path(&self) -> PathBuf {
         #[cfg(test)]
-        let deploy_path = {
-            std::env::temp_dir()
-                .join("test-kobo-deployment")
-                .join("KoboRoot.tgz")
-        };
+        let path = std::env::temp_dir()
+            .join("test-kobo-deployment")
+            .join("KoboRoot.tgz");
 
         #[cfg(all(feature = "emulator", not(test)))]
-        let deploy_path = PathBuf::from("/tmp/.kobo/KoboRoot.tgz");
+        let path = PathBuf::from("/tmp/.kobo/KoboRoot.tgz");
 
         #[cfg(all(not(feature = "emulator"), not(test)))]
-        let deploy_path = PathBuf::from(format!("{}/.kobo/KoboRoot.tgz", INTERNAL_CARD_ROOT));
+        let path = PathBuf::from(format!("{}/.kobo/KoboRoot.tgz", INTERNAL_CARD_ROOT));
 
-        tracing::debug!(path = ?deploy_path, "Deploy destination");
+        tracing::debug!(path = ?path, "Deploy destination");
+        path
+    }
 
+    fn ensure_deploy_dir(&self, deploy_path: &Path) -> Result<(), OtaError> {
         #[cfg(any(test, feature = "emulator"))]
         {
             if let Some(parent) = deploy_path.parent() {
@@ -620,6 +622,14 @@ impl OtaClient {
                 std::fs::create_dir_all(parent)?;
             }
         }
+
+        let _ = deploy_path;
+        Ok(())
+    }
+
+    fn deploy_bytes(&self, data: &[u8]) -> Result<PathBuf, OtaError> {
+        let deploy_path = self.deploy_path();
+        self.ensure_deploy_dir(&deploy_path)?;
 
         tracing::debug!(bytes = data.len(), path = ?deploy_path, "Writing file");
         let mut file = File::create(&deploy_path)?;
@@ -636,6 +646,7 @@ impl OtaClient {
     /// Opens the downloaded ZIP archive, locates the `KoboRoot.tgz` file,
     /// extracts it, and writes it to `/mnt/onboard/.kobo/KoboRoot.tgz`
     /// where the Kobo device will automatically install it on next reboot.
+    /// On success, the source artifact ZIP is deleted as a best-effort cleanup step.
     ///
     /// # Arguments
     ///
@@ -701,7 +712,12 @@ impl OtaClient {
             "Extracted file"
         );
 
-        self.deploy_bytes(&kobo_root_data)
+        let deploy_path = self.deploy_bytes(&kobo_root_data)?;
+        if let Err(e) = std::fs::remove_file(&zip_path) {
+            tracing::error!(path = ?zip_path, error = %e, "Failed to remove source file");
+        }
+
+        Ok(deploy_path)
     }
 
     /// Queries the GitHub API for the repository's default branch name.
@@ -860,16 +876,16 @@ fn api_error(e: reqwest::Error) -> OtaError {
     }
 }
 
-fn check_disk_space(path: &str) -> Result<(), OtaError> {
+fn check_disk_space(path: &Path) -> Result<(), OtaError> {
     use nix::sys::statvfs::statvfs;
 
     let stat = statvfs(path)?;
     let available_mb = (stat.blocks_available() as u64 * stat.block_size() as u64) / (1024 * 1024);
-    tracing::debug!(path, available_mb, "Checking disk space");
+    tracing::debug!(path = ?path, available_mb, "Checking disk space");
 
     if available_mb < 100 {
         tracing::error!(
-            path,
+            path = ?path,
             available_mb,
             required_mb = 100,
             "Insufficient disk space"
@@ -885,20 +901,23 @@ mod tests {
     use crate::github::GithubClient;
     use secrecy::SecretString;
 
-    fn make_client() -> OtaClient {
+    fn make_client(tmp_dir: PathBuf) -> OtaClient {
         crate::crypto::init_crypto_provider();
         let github =
             GithubClient::new(Some(SecretString::from("test_token"))).expect("client build");
-        OtaClient::new(github)
+        OtaClient::new(github, tmp_dir)
     }
 
     #[test]
     fn test_extract_and_deploy_success() {
-        let client = make_client();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let client = make_client(temp_dir.path().to_path_buf());
         let fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("src/ota/tests/fixtures/test_artifact.zip");
+        let artifact_path = temp_dir.path().join("test_artifact.zip");
+        std::fs::copy(&fixture_path, &artifact_path).unwrap();
 
-        let result = client.extract_and_deploy(fixture_path);
+        let result = client.extract_and_deploy(artifact_path.clone());
 
         assert!(
             result.is_ok(),
@@ -920,15 +939,22 @@ mod tests {
         );
 
         std::fs::remove_file(&deploy_path).ok();
+        assert!(
+            !artifact_path.exists(),
+            "Downloaded artifact should be removed after successful deployment"
+        );
     }
 
     #[test]
     fn test_extract_and_deploy_missing_koboroot() {
-        let client = make_client();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let client = make_client(temp_dir.path().to_path_buf());
         let fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("src/ota/tests/fixtures/empty_artifact.zip");
+        let artifact_path = temp_dir.path().join("empty_artifact.zip");
+        std::fs::copy(&fixture_path, &artifact_path).unwrap();
 
-        let result = client.extract_and_deploy(fixture_path);
+        let result = client.extract_and_deploy(artifact_path.clone());
         assert!(result.is_err(), "Should fail when KoboRoot.tgz is missing");
 
         if let Err(OtaError::DeploymentError(msg)) = result {
@@ -939,30 +965,36 @@ mod tests {
         } else {
             panic!("Expected DeploymentError");
         }
+
+        assert!(
+            artifact_path.exists(),
+            "Source artifact should be retained when deployment fails"
+        );
     }
 
     #[test]
     fn test_check_disk_space_sufficient() {
         use tempfile::TempDir;
         let temp_dir = TempDir::new().unwrap();
-        let result = check_disk_space(temp_dir.path().to_str().unwrap());
+        let result = check_disk_space(temp_dir.path());
         assert!(
             result.is_ok(),
             "Should have sufficient disk space in temp directory"
         );
     }
 
-    fn create_external_client() -> OtaClient {
+    fn create_external_client(tmp_dir: PathBuf) -> OtaClient {
         crate::crypto::init_crypto_provider();
         let token = std::env::var("GH_TOKEN").expect("GH_TOKEN must be set");
         let github = GithubClient::new(Some(SecretString::from(token))).expect("client build");
-        OtaClient::new(github)
+        OtaClient::new(github, tmp_dir)
     }
 
     #[test]
     #[ignore]
     fn test_external_download_default_branch_and_deploy() {
-        let client = create_external_client();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let client = create_external_client(temp_dir.path().to_path_buf());
         let mut last_progress = None;
 
         let download_result = client.download_default_branch_artifact(|progress| {
@@ -1001,14 +1033,14 @@ mod tests {
             deploy_path
         );
 
-        std::fs::remove_file(&zip_path).ok();
         std::fs::remove_file(&deploy_path).ok();
     }
 
     #[test]
     #[ignore]
     fn test_external_download_stable_release_and_deploy() {
-        let client = create_external_client();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let client = create_external_client(temp_dir.path().to_path_buf());
         let download_result = client.download_stable_release_artifact(|_| {});
 
         assert!(
@@ -1043,7 +1075,6 @@ mod tests {
             deploy_path
         );
 
-        std::fs::remove_file(&asset_path).ok();
         std::fs::remove_file(&deploy_path).ok();
     }
 }

@@ -22,19 +22,19 @@
 //!
 //! ```
 //! use cadmus_core::settings::LoggingSettings;
-//! use cadmus_core::telemetry;
+//! use cadmus_core::telemetry::tracing;
 //! use cadmus_core::logging::get_run_id;
 //!
 //! let mut settings = LoggingSettings::default();
 //! settings.otlp_endpoint = Some("http://localhost:4318".to_string());
 //!
 //! // Initialize telemetry (returns layer for tracing subscriber)
-//! let layer = telemetry::init_telemetry::<tracing_subscriber::Registry>(&settings, get_run_id())?;
+//! let layer = tracing::init_telemetry::<tracing_subscriber::Registry>(&settings, get_run_id())?;
 //!
 //! // ... application runs ...
 //!
 //! // Flush and shutdown at exit
-//! telemetry::shutdown_telemetry();
+//! tracing::shutdown_telemetry();
 //! # Ok::<(), anyhow::Error>(())
 //! ```
 
@@ -48,8 +48,7 @@ use opentelemetry_otlp::{LogExporter, SpanExporter, WithExportConfig};
 use opentelemetry_sdk::logs::{BatchLogProcessor, SdkLoggerProvider};
 use opentelemetry_sdk::trace::{BatchSpanProcessor, SdkTracerProvider};
 use opentelemetry_sdk::Resource;
-use std::sync::{mpsc, OnceLock};
-use std::thread;
+use std::sync::OnceLock;
 use std::time::Duration;
 use tracing_subscriber::Layer;
 
@@ -87,7 +86,7 @@ static LOGGER_PROVIDER: OnceLock<SdkLoggerProvider> = OnceLock::new();
 ///
 /// ```
 /// use cadmus_core::settings::LoggingSettings;
-/// use cadmus_core::telemetry::init_telemetry;
+/// use cadmus_core::telemetry::tracing::init_telemetry;
 ///
 /// let settings = LoggingSettings {
 ///     enabled: true,
@@ -150,19 +149,6 @@ where
     Ok(Some(combined_layer))
 }
 
-/// This ensures that when there are connection failures during shutdown, it doesn't block
-/// forever.
-fn shutdown_with_timeout(shutdown: impl FnOnce() + Send + 'static, timeout: Duration) {
-    let (tx, rx) = mpsc::channel();
-
-    thread::spawn(move || {
-        shutdown();
-        let _ = tx.send(());
-    });
-
-    let _ = rx.recv_timeout(timeout);
-}
-
 /// Shuts down OpenTelemetry providers and flushes buffered telemetry.
 ///
 /// This function should be called before application exit to ensure all
@@ -177,7 +163,7 @@ fn shutdown_with_timeout(shutdown: impl FnOnce() + Send + 'static, timeout: Dura
 /// # Example
 ///
 /// ```
-/// use cadmus_core::telemetry::shutdown_telemetry;
+/// use cadmus_core::telemetry::tracing::shutdown_telemetry;
 ///
 /// // At application exit
 /// shutdown_telemetry();
@@ -186,7 +172,7 @@ pub fn shutdown_telemetry() {
     let timeout = Duration::from_millis(1500);
 
     if let Some(provider) = TRACER_PROVIDER.get() {
-        shutdown_with_timeout(
+        super::shutdown::shutdown_with_timeout(
             {
                 move || {
                     let _ = provider.shutdown();
@@ -197,7 +183,7 @@ pub fn shutdown_telemetry() {
     }
 
     if let Some(provider) = LOGGER_PROVIDER.get() {
-        shutdown_with_timeout(
+        super::shutdown::shutdown_with_timeout(
             {
                 move || {
                     let _ = provider.shutdown();

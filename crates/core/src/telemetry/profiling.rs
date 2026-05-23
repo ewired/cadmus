@@ -27,11 +27,11 @@
 //!
 //! ```no_run
 //! // Initialize profiling early in main(), before any significant allocation.
-//! cadmus_core::profiling::init_profiling(None)?;
+//! cadmus_core::telemetry::profiling::init_profiling(None)?;
 //!
 //! // ... application runs ...
 //!
-//! cadmus_core::profiling::shutdown_profiling();
+//! cadmus_core::telemetry::profiling::shutdown_profiling();
 //! # Ok::<(), anyhow::Error>(())
 //! ```
 
@@ -41,6 +41,7 @@ use pyroscope::backend::jemalloc::jemalloc_backend;
 use pyroscope::backend::pprof::{pprof_backend, PprofConfig};
 use pyroscope::pyroscope::{PyroscopeAgent, PyroscopeAgentBuilder, PyroscopeAgentRunning};
 use std::sync::Mutex;
+use std::time::Duration;
 
 struct ProfilingAgents {
     heap: PyroscopeAgent<PyroscopeAgentRunning>,
@@ -153,13 +154,15 @@ pub fn init_profiling(settings_endpoint: Option<&str>) -> Result<(), Error> {
 /// Safe to call even if `init_profiling` was never called or profiling was
 /// disabled due to a missing endpoint.
 pub fn shutdown_profiling() {
+    let timeout = Duration::from_millis(1500);
+
     if let Ok(mut guard) = AGENTS.lock() {
         if let Some(agents) = guard.take() {
             if let Ok(stopped) = agents.heap.stop() {
-                stopped.shutdown();
+                super::shutdown::shutdown_with_timeout(move || stopped.shutdown(), timeout);
             }
             if let Ok(stopped) = agents.cpu.stop() {
-                stopped.shutdown();
+                super::shutdown::shutdown_with_timeout(move || stopped.shutdown(), timeout);
             }
         }
     }

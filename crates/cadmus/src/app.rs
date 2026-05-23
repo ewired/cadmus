@@ -580,9 +580,9 @@ pub fn run() -> Result<(), Error> {
     cadmus_core::crypto::init_crypto_provider();
 
     #[cfg(feature = "profiling")]
-    if let Err(e) =
-        cadmus_core::profiling::init_profiling(settings.logging.pyroscope_endpoint.as_deref())
-    {
+    if let Err(e) = cadmus_core::telemetry::profiling::init_profiling(
+        settings.logging.pyroscope_endpoint.as_deref(),
+    ) {
         tracing::warn!(error = %e, "Failed to initialize profiling");
     }
 
@@ -1808,7 +1808,7 @@ pub fn run() -> Result<(), Error> {
     }
 
     #[cfg(feature = "profiling")]
-    cadmus_core::profiling::shutdown_profiling();
+    cadmus_core::telemetry::profiling::shutdown_profiling();
 
     cadmus_core::logging::shutdown_logging();
 

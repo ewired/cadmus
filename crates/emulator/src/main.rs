@@ -315,8 +315,10 @@ fn run() -> Result<(), Error> {
     cadmus_core::crypto::init_crypto_provider();
 
     #[cfg(feature = "profiling")]
-    cadmus_core::profiling::init_profiling(settings.logging.pyroscope_endpoint.as_deref())
-        .context("Failed to initialize profiling")?;
+    cadmus_core::telemetry::profiling::init_profiling(
+        settings.logging.pyroscope_endpoint.as_deref(),
+    )
+    .context("Failed to initialize profiling")?;
 
     i18n::init(settings.locale.as_ref());
 
@@ -948,7 +950,7 @@ fn run() -> Result<(), Error> {
         .context("can't save settings")?;
 
     #[cfg(feature = "profiling")]
-    cadmus_core::profiling::shutdown_profiling();
+    cadmus_core::telemetry::profiling::shutdown_profiling();
 
     cadmus_core::logging::shutdown_logging();
 

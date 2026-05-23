@@ -2,9 +2,10 @@
 
 use super::{SettingData, SettingIdentity, SettingKind, WidgetKind};
 use crate::fl;
+use crate::geom::Rectangle;
 use crate::i18n::I18nDisplay;
-use crate::settings::{FinishedAction, Settings};
-use crate::view::{Bus, EntryId, EntryKind, Event};
+use crate::settings::{FileExtension, FinishedAction, RefreshRatePair, Settings};
+use crate::view::{Bus, EntryId, EntryKind, Event, ViewId};
 
 /// Reader finished action setting
 pub struct FinishedActionSetting;
@@ -55,6 +56,318 @@ impl SettingKind for FinishedActionSetting {
             settings.reader.finished = *action;
             return (Some(action.to_i18n_string()), true);
         }
+        (None, false)
+    }
+}
+
+/// Shows global refresh rate and opens the RefreshRateByKindEditor on tap.
+pub struct RefreshRateInfo;
+
+impl SettingKind for RefreshRateInfo {
+    fn identity(&self) -> SettingIdentity {
+        SettingIdentity::RefreshRate
+    }
+
+    fn label(&self, _settings: &Settings) -> String {
+        fl!("settings-reader-refresh-rate")
+    }
+
+    fn fetch(&self, settings: &Settings) -> SettingData {
+        let global = &settings.reader.refresh_rate.global;
+        let value = format!("{} / {}", global.regular, global.inverted);
+
+        SettingData {
+            value,
+            widget: WidgetKind::ActionLabel(Event::OpenRefreshRateEditor),
+        }
+    }
+
+    /// Updates the summary label when either global input is submitted.
+    ///
+    /// Settings are intentionally not written here. Each input (`RefreshRateRegularInput`,
+    /// `RefreshRateInvertedInput`) has its own [`SettingKind`] row (`RefreshRateRegularSetting`,
+    /// `RefreshRateInvertedSetting`) that owns the write.
+    fn handle(
+        &self,
+        evt: &Event,
+        settings: &mut Settings,
+        _bus: &mut Bus,
+    ) -> (Option<String>, bool) {
+        let global = &settings.reader.refresh_rate.global;
+        match evt {
+            Event::Submit(ViewId::RefreshRateRegularInput, text) => {
+                let regular = text.parse::<u8>().unwrap_or(global.regular);
+                (
+                    Some(fl!(
+                        "settings-reader-refresh-rate-summary",
+                        regular = regular,
+                        inverted = global.inverted
+                    )),
+                    false,
+                )
+            }
+            Event::Submit(ViewId::RefreshRateInvertedInput, text) => {
+                let inverted = text.parse::<u8>().unwrap_or(global.inverted);
+                (
+                    Some(fl!(
+                        "settings-reader-refresh-rate-summary",
+                        regular = global.regular,
+                        inverted = inverted
+                    )),
+                    false,
+                )
+            }
+            _ => (None, false),
+        }
+    }
+}
+
+/// Shows the refresh rate pair for a specific file extension.
+pub struct RefreshRateByKindInfo(pub FileExtension);
+
+impl SettingKind for RefreshRateByKindInfo {
+    fn identity(&self) -> SettingIdentity {
+        SettingIdentity::RefreshRateByKind(self.0.as_str().to_string())
+    }
+
+    fn label(&self, _settings: &Settings) -> String {
+        self.0.to_string().to_uppercase()
+    }
+
+    fn fetch(&self, settings: &Settings) -> SettingData {
+        let pair = settings
+            .reader
+            .refresh_rate
+            .by_kind
+            .get(self.0.as_str())
+            .cloned()
+            .unwrap_or(RefreshRatePair {
+                regular: 0,
+                inverted: 0,
+            });
+
+        let value = format!("{} / {}", pair.regular, pair.inverted);
+
+        SettingData {
+            value,
+            widget: WidgetKind::ActionLabel(Event::Select(EntryId::EditRefreshRateByKind(self.0))),
+        }
+    }
+
+    fn hold_event(&self, rect: Rectangle) -> Option<Event> {
+        let entries = vec![EntryKind::Command(
+            fl!("delete"),
+            EntryId::DeleteRefreshRateByKind(self.0),
+        )];
+
+        Some(Event::SubMenu(rect, entries))
+    }
+}
+
+/// The "regular" field of the global refresh rate pair.
+pub struct RefreshRateRegularSetting;
+
+impl SettingKind for RefreshRateRegularSetting {
+    fn identity(&self) -> SettingIdentity {
+        SettingIdentity::RefreshRateRegular
+    }
+
+    fn label(&self, _settings: &Settings) -> String {
+        fl!("settings-reader-refresh-rate-regular")
+    }
+
+    fn fetch(&self, settings: &Settings) -> SettingData {
+        let value = settings.reader.refresh_rate.global.regular.to_string();
+
+        SettingData {
+            value,
+            widget: WidgetKind::ActionLabel(Event::OpenNamedInput {
+                view_id: crate::view::ViewId::RefreshRateRegularInput,
+                label: fl!("settings-reader-refresh-rate-regular-input"),
+                max_chars: 3,
+                initial_text: settings.reader.refresh_rate.global.regular.to_string(),
+            }),
+        }
+    }
+
+    fn handle(
+        &self,
+        evt: &Event,
+        settings: &mut Settings,
+        _bus: &mut Bus,
+    ) -> (Option<String>, bool) {
+        if let Event::Submit(crate::view::ViewId::RefreshRateRegularInput, ref text) = evt {
+            if let Ok(v) = text.parse::<u8>() {
+                settings.reader.refresh_rate.global.regular = v;
+                return (Some(v.to_string()), true);
+            }
+        }
+
+        (None, false)
+    }
+}
+
+/// The "inverted" field of the global refresh rate pair.
+pub struct RefreshRateInvertedSetting;
+
+impl SettingKind for RefreshRateInvertedSetting {
+    fn identity(&self) -> SettingIdentity {
+        SettingIdentity::RefreshRateInverted
+    }
+
+    fn label(&self, _settings: &Settings) -> String {
+        fl!("settings-reader-refresh-rate-inverted")
+    }
+
+    fn fetch(&self, settings: &Settings) -> SettingData {
+        let value = settings.reader.refresh_rate.global.inverted.to_string();
+
+        SettingData {
+            value,
+            widget: WidgetKind::ActionLabel(Event::OpenNamedInput {
+                view_id: crate::view::ViewId::RefreshRateInvertedInput,
+                label: fl!("settings-reader-refresh-rate-inverted-input"),
+                max_chars: 3,
+                initial_text: settings.reader.refresh_rate.global.inverted.to_string(),
+            }),
+        }
+    }
+
+    fn handle(
+        &self,
+        evt: &Event,
+        settings: &mut Settings,
+        _bus: &mut Bus,
+    ) -> (Option<String>, bool) {
+        if let Event::Submit(crate::view::ViewId::RefreshRateInvertedInput, ref text) = evt {
+            if let Ok(v) = text.parse::<u8>() {
+                settings.reader.refresh_rate.global.inverted = v;
+                return (Some(v.to_string()), true);
+            }
+        }
+
+        (None, false)
+    }
+}
+
+/// The "regular" field of a per-kind refresh rate pair.
+pub struct RefreshRateByKindRegular(pub FileExtension);
+
+impl SettingKind for RefreshRateByKindRegular {
+    fn identity(&self) -> SettingIdentity {
+        SettingIdentity::RefreshRateByKindRegular(self.0.as_str().to_string())
+    }
+
+    fn label(&self, _settings: &Settings) -> String {
+        fl!("settings-reader-refresh-rate-regular")
+    }
+
+    fn fetch(&self, settings: &Settings) -> SettingData {
+        let regular = settings
+            .reader
+            .refresh_rate
+            .by_kind
+            .get(self.0.as_str())
+            .map(|p| p.regular)
+            .unwrap_or(0);
+
+        SettingData {
+            value: regular.to_string(),
+            widget: WidgetKind::ActionLabel(Event::OpenNamedInput {
+                view_id: crate::view::ViewId::RefreshRateByKindRegularInput,
+                label: fl!(
+                    "settings-reader-refresh-rate-by-kind-regular-input",
+                    ext = self.0.as_str()
+                ),
+                max_chars: 3,
+                initial_text: regular.to_string(),
+            }),
+        }
+    }
+
+    fn handle(
+        &self,
+        evt: &Event,
+        settings: &mut Settings,
+        _bus: &mut Bus,
+    ) -> (Option<String>, bool) {
+        if let Event::Submit(crate::view::ViewId::RefreshRateByKindRegularInput, ref text) = evt {
+            if let Ok(v) = text.parse::<u8>() {
+                let pair = settings
+                    .reader
+                    .refresh_rate
+                    .by_kind
+                    .entry(self.0.as_str().to_string())
+                    .or_insert(RefreshRatePair {
+                        regular: 0,
+                        inverted: 0,
+                    });
+                pair.regular = v;
+                return (Some(v.to_string()), true);
+            }
+        }
+
+        (None, false)
+    }
+}
+
+/// The "inverted" field of a per-kind refresh rate pair.
+pub struct RefreshRateByKindInverted(pub FileExtension);
+
+impl SettingKind for RefreshRateByKindInverted {
+    fn identity(&self) -> SettingIdentity {
+        SettingIdentity::RefreshRateByKindInverted(self.0.as_str().to_string())
+    }
+
+    fn label(&self, _settings: &Settings) -> String {
+        fl!("settings-reader-refresh-rate-inverted")
+    }
+
+    fn fetch(&self, settings: &Settings) -> SettingData {
+        let inverted = settings
+            .reader
+            .refresh_rate
+            .by_kind
+            .get(self.0.as_str())
+            .map(|p| p.inverted)
+            .unwrap_or(0);
+
+        SettingData {
+            value: inverted.to_string(),
+            widget: WidgetKind::ActionLabel(Event::OpenNamedInput {
+                view_id: crate::view::ViewId::RefreshRateByKindInvertedInput,
+                label: fl!(
+                    "settings-reader-refresh-rate-by-kind-inverted-input",
+                    ext = self.0.as_str()
+                ),
+                max_chars: 3,
+                initial_text: inverted.to_string(),
+            }),
+        }
+    }
+
+    fn handle(
+        &self,
+        evt: &Event,
+        settings: &mut Settings,
+        _bus: &mut Bus,
+    ) -> (Option<String>, bool) {
+        if let Event::Submit(crate::view::ViewId::RefreshRateByKindInvertedInput, ref text) = evt {
+            if let Ok(v) = text.parse::<u8>() {
+                let pair = settings
+                    .reader
+                    .refresh_rate
+                    .by_kind
+                    .entry(self.0.as_str().to_string())
+                    .or_insert(RefreshRatePair {
+                        regular: 0,
+                        inverted: 0,
+                    });
+                pair.inverted = v;
+                return (Some(v.to_string()), true);
+            }
+        }
+
         (None, false)
     }
 }
@@ -121,6 +434,99 @@ mod tests {
             let result = setting.handle(&event, &mut settings, &mut bus);
 
             assert!(result.0.is_none());
+        }
+    }
+
+    mod refresh_rate_info {
+        use super::*;
+
+        #[test]
+        fn handle_regular_submit_updates_display_without_writing_settings() {
+            let setting = RefreshRateInfo;
+            let mut settings = Settings::default();
+            settings.reader.refresh_rate.global.regular = 5;
+            settings.reader.refresh_rate.global.inverted = 10;
+            let mut bus: Bus = VecDeque::new();
+
+            let event = Event::Submit(ViewId::RefreshRateRegularInput, "3".to_string());
+            let (display, handled) = setting.handle(&event, &mut settings, &mut bus);
+
+            assert_eq!(
+                display.as_deref(),
+                Some(
+                    fl!(
+                        "settings-reader-refresh-rate-summary",
+                        regular = 3u8,
+                        inverted = 10u8
+                    )
+                    .as_str()
+                )
+            );
+            assert!(!handled);
+            assert_eq!(settings.reader.refresh_rate.global.regular, 5);
+        }
+
+        #[test]
+        fn handle_inverted_submit_updates_display_without_writing_settings() {
+            let setting = RefreshRateInfo;
+            let mut settings = Settings::default();
+            settings.reader.refresh_rate.global.regular = 5;
+            settings.reader.refresh_rate.global.inverted = 10;
+            let mut bus: Bus = VecDeque::new();
+
+            let event = Event::Submit(ViewId::RefreshRateInvertedInput, "7".to_string());
+            let (display, handled) = setting.handle(&event, &mut settings, &mut bus);
+
+            assert_eq!(
+                display.as_deref(),
+                Some(
+                    fl!(
+                        "settings-reader-refresh-rate-summary",
+                        regular = 5u8,
+                        inverted = 7u8
+                    )
+                    .as_str()
+                )
+            );
+            assert!(!handled);
+            assert_eq!(settings.reader.refresh_rate.global.inverted, 10);
+        }
+
+        #[test]
+        fn handle_invalid_text_falls_back_to_current_value() {
+            let setting = RefreshRateInfo;
+            let mut settings = Settings::default();
+            settings.reader.refresh_rate.global.regular = 5;
+            settings.reader.refresh_rate.global.inverted = 10;
+            let mut bus: Bus = VecDeque::new();
+
+            let event = Event::Submit(ViewId::RefreshRateRegularInput, "bad".to_string());
+            let (display, _) = setting.handle(&event, &mut settings, &mut bus);
+
+            assert_eq!(
+                display.as_deref(),
+                Some(
+                    fl!(
+                        "settings-reader-refresh-rate-summary",
+                        regular = 5u8,
+                        inverted = 10u8
+                    )
+                    .as_str()
+                )
+            );
+        }
+
+        #[test]
+        fn handle_unrelated_event_returns_none() {
+            let setting = RefreshRateInfo;
+            let mut settings = Settings::default();
+            let mut bus: Bus = VecDeque::new();
+
+            let (display, handled) =
+                setting.handle(&Event::Select(EntryId::About), &mut settings, &mut bus);
+
+            assert!(display.is_none());
+            assert!(!handled);
         }
     }
 }

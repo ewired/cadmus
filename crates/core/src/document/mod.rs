@@ -5,6 +5,7 @@ pub mod pdf;
 
 mod djvulibre_sys;
 mod mupdf_sys;
+pub use mupdf_sys::log_mupdf_features;
 
 use self::djvu::DjvuOpener;
 use self::epub::EpubDocument;

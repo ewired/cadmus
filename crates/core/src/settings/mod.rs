@@ -835,7 +835,7 @@ impl Default for ReaderSettings {
             line_height: DEFAULT_LINE_HEIGHT,
             continuous_fit_to_width: true,
             ignore_document_css: false,
-            dithered_kinds: ["cbz", "png", "jpg", "jpeg"]
+            dithered_kinds: ["cbz", "png", "jpg", "jpeg", "webp"]
                 .iter()
                 .map(|k| k.to_string())
                 .collect(),

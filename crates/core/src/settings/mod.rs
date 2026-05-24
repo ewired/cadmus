@@ -864,6 +864,10 @@ impl Default for ImportSettings {
                 FileExtension::Oxps,
                 FileExtension::Mobi,
                 FileExtension::Cbz,
+                FileExtension::Webp,
+                FileExtension::Png,
+                FileExtension::Jpg,
+                FileExtension::Jpeg,
             ]
             .iter()
             .copied()

@@ -9,6 +9,9 @@ use crate::i18n::I18nDisplay;
 use crate::metadata::{SortMethod, TextAlign};
 use crate::unit::mm_to_px;
 use fxhash::FxHashSet;
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
+use sqlx::sqlite::{Sqlite, SqliteArgumentValue, SqliteTypeInfo, SqliteValueRef};
 use unic_langid::LanguageIdentifier;
 
 pub use self::preset::{guess_frontlight, LightPreset};
@@ -539,11 +542,35 @@ impl std::str::FromStr for FileExtension {
             "fb2" => Ok(FileExtension::Fb2),
             "mobi" => Ok(FileExtension::Mobi),
             "txt" => Ok(FileExtension::Txt),
-            "html" => Ok(FileExtension::Html),
+            "html" | "htm" => Ok(FileExtension::Html),
             "xps" => Ok(FileExtension::Xps),
             "oxps" => Ok(FileExtension::Oxps),
             _ => Err(()),
         }
+    }
+}
+
+impl sqlx::Type<Sqlite> for FileExtension {
+    fn type_info() -> SqliteTypeInfo {
+        <String as sqlx::Type<Sqlite>>::type_info()
+    }
+
+    fn compatible(ty: &SqliteTypeInfo) -> bool {
+        <String as sqlx::Type<Sqlite>>::compatible(ty)
+    }
+}
+
+impl<'q> sqlx::Encode<'q, Sqlite> for FileExtension {
+    fn encode_by_ref(&self, buf: &mut Vec<SqliteArgumentValue<'q>>) -> Result<IsNull, BoxDynError> {
+        self.as_str().encode_by_ref(buf)
+    }
+}
+
+impl<'r> sqlx::Decode<'r, Sqlite> for FileExtension {
+    fn decode(value: SqliteValueRef<'r>) -> Result<Self, BoxDynError> {
+        let s = <String as sqlx::Decode<'r, Sqlite>>::decode(value)?;
+        s.parse()
+            .map_err(|()| format!("unknown file extension: {s}").into())
     }
 }
 
@@ -826,6 +853,13 @@ impl Default for ImportSettings {
             .copied()
             .collect(),
         }
+    }
+}
+
+impl ImportSettings {
+    /// Returns `true` if `kind` is in the set of allowed file kinds.
+    pub fn is_kind_allowed(&self, kind: FileExtension) -> bool {
+        self.allowed_kinds.contains(&kind)
     }
 }
 
@@ -1122,5 +1156,17 @@ allowed-kinds = ["epub", "unknown-format", "another-unknown"]
             let parsed = ext.as_str().parse::<FileExtension>().ok();
             assert_eq!(parsed, Some(*ext), "round trip failed for {:?}", ext);
         }
+    }
+
+    #[test]
+    fn test_htm_extension_parses_as_html() {
+        let parsed = "htm".parse::<FileExtension>();
+        assert_eq!(parsed, Ok(FileExtension::Html));
+    }
+
+    #[test]
+    fn test_html_extension_still_parses() {
+        let parsed = "html".parse::<FileExtension>();
+        assert_eq!(parsed, Ok(FileExtension::Html));
     }
 }

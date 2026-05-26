@@ -25,8 +25,8 @@ use super::{cmd, fs, http};
 
 /// Base names of all thirdparty shared libraries.
 ///
-/// SONAMEs are discovered at runtime via `readelf -d` because upstream
-/// libraries do not follow a consistent ABI versioning scheme.
+/// SONAMEs are discovered at runtime via `arm-linux-gnueabihf-readelf -d`
+/// because upstream libraries do not follow a consistent ABI versioning scheme.
 pub const SONAMES: &[&str] = &[
     "libz.so",
     "libbz2.so",
@@ -43,20 +43,27 @@ pub const SONAMES: &[&str] = &[
 
 /// Returns the SONAME of `lib` in `libs_dir`.
 ///
-/// When the library file exists, `readelf -d` is used to extract the SONAME
-/// from the binary. When only a versioned file exists (e.g. `libz.so.1.2.13`
-/// without `libz.so`), the versioned filename is returned directly.
+/// When the library file exists, `arm-linux-gnueabihf-readelf -d` is used to
+/// extract the SONAME from the binary. When only a versioned file exists
+/// (e.g. `libz.so.1.2.13` without `libz.so`), the versioned filename is
+/// returned directly.
 ///
 /// # Errors
 ///
-/// Returns an error if `readelf` fails or the SONAME cannot be determined.
+/// Returns an error if `arm-linux-gnueabihf-readelf` fails or the SONAME
+/// cannot be determined.
 pub fn soname(libs_dir: &Path, lib: &str) -> Result<String> {
     let so_path = libs_dir.join(lib);
     if so_path.exists() {
         let so_path_str = so_path
             .to_str()
             .with_context(|| format!("shared library path is not valid UTF-8: {so_path:?}"))?;
-        let output = cmd::output("readelf", &["-d", so_path_str], libs_dir, &[])?;
+        let output = cmd::output(
+            "arm-linux-gnueabihf-readelf",
+            &["-d", so_path_str],
+            libs_dir,
+            &[],
+        )?;
         let soname = output
             .lines()
             .find(|line| line.contains("SONAME"))
@@ -406,7 +413,17 @@ pub fn build_libraries(thirdparty_dir: &Path, names: &[&str]) -> Result<()> {
                 .with_context(|| format!("failed to apply kobo.patch for {name}"))?;
         }
 
-        cmd::run("./build-kobo.sh", &[], &lib_dir, &[])
+        let envs = [
+            ("AR", "arm-linux-gnueabihf-ar"),
+            ("AS", "arm-linux-gnueabihf-as"),
+            ("STRIP", "arm-linux-gnueabihf-strip"),
+            ("RANLIB", "arm-linux-gnueabihf-ranlib"),
+            ("LD", "arm-linux-gnueabihf-ld"),
+            ("CC_FOR_BUILD", "cc"),
+            ("CXX_FOR_BUILD", "c++"),
+            ("CC_BUILD", "cc"),
+        ];
+        cmd::run("./build-kobo.sh", &[], &lib_dir, &envs)
             .with_context(|| format!("failed to build {name}"))?;
 
         write_marker(&lib_dir, BUILT_MARKER, name, "build")?;

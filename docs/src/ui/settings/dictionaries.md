@@ -99,6 +99,20 @@ whenever the dictionary files change.
 
 ## Where Dictionaries are Stored
 
-Downloaded dictionaries live in the `dictionaries/reader-dict/<lang>/`
-folder on your device. Each language gets its own subfolder containing a
-`.dict.dz` (or `.dict`) and a `.index` file.
+Cadmus stores dictionaries in different locations depending on whether your
+device has an SD card and whether you are using a test build:
+
+- **On devices with an SD card**:
+  - Production: `/mnt/sd/.cadmus/dictionaries/reader-dict/<lang>/`
+  - Test build: `/mnt/sd/.cadmus-tst/dictionaries/reader-dict/<lang>/`
+- **On devices without an SD card**:
+  - Production: `/mnt/onboard/.adds/cadmus/dictionaries/reader-dict/<lang>/`
+  - Test build: `/mnt/onboard/.adds/cadmus-tst/dictionaries/reader-dict/<lang>/`
+
+Each language gets its own subfolder containing a `.dict.dz` (or `.dict`) and a `.index` file.
+
+> [!NOTE]
+> If your SD card is already inserted when you upgrade Cadmus, your dictionaries
+> are moved to the SD card automatically on the next boot. If you insert an SD
+> card after Cadmus has already run, move the `dictionaries/` folder manually —
+> see [Moving data to an SD card](../../installation/migration.md#moving-data-to-an-sd-card).

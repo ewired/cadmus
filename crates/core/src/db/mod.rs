@@ -8,6 +8,9 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use std::path::Path;
 use std::str::FromStr;
 
+/// The filename of the SQLite database used by Cadmus.
+pub const DB_FILENAME: &str = "cadmus.sqlite";
+
 /// Database handle providing synchronous API over async SQLx operations.
 /// Uses a bridge pattern with `RUNTIME.block_on()` to maintain synchronous interface
 /// for compatibility with existing single-threaded event loop.
@@ -35,7 +38,14 @@ impl Database {
     /// * `Err(Error)` - Connection failure
     #[cfg_attr(feature = "tracing", tracing::instrument(fields(db_path = %path.as_ref().display())))]
     pub fn new<P: AsRef<Path> + std::fmt::Debug>(path: P) -> Result<Self, Error> {
-        let path_str = path.as_ref().display().to_string();
+        let path = path.as_ref();
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let path_str = path.display().to_string();
 
         tracing::info!(db_path = %path_str, "connecting to database");
 

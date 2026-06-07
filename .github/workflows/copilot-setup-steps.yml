@@ -26,30 +26,12 @@ jobs:
           components: rustfmt, clippy
           targets: arm-unknown-linux-gnueabihf
 
-      - name: Restore shared cargo cache
-        uses: actions/cache/restore@v5
+      - uses: ./.github/actions/cargo-cache
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-shared-${{ steps.rust-toolchain.outputs.cachekey }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-shared-${{ steps.rust-toolchain.outputs.cachekey }}-
+          cachekey: ${{ steps.rust-toolchain.outputs.cachekey }}
+          mode: restore
 
-      - name: Cache thirdparty libraries (Kobo cross-compile)
-        uses: ./.github/actions/cache-thirdparty
-        with:
-          kind: kobo-download
-
-      - name: Cache thirdparty libraries (native testing)
-        uses: ./.github/actions/cache-thirdparty
-        with:
-          kind: native
-
-      - name: Cache Linaro toolchain
+      - name: Restore Linaro toolchain
         id: cache-linaro
         uses: actions/cache@v5
         with:
@@ -97,12 +79,6 @@ jobs:
 
       - name: Build documentation
         run: cargo xtask docs --mdbook-only
-
-      - name: Download thirdparty dependencies
-        run: cargo xtask build-kobo --slow --download-only
-
-      - name: Setup native dependencies for testing
-        run: cargo xtask setup-native
 
       - name: Install reviewdog
         uses: reviewdog/action-setup@v1

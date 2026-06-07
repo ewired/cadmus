@@ -70,8 +70,14 @@ jobs:
           fetch-tags: true
 
       - uses: dtolnay/rust-toolchain@stable
+        id: rust-toolchain
         with:
           targets: arm-unknown-linux-gnueabihf
+
+      - uses: ./.github/actions/cargo-cache
+        with:
+          cachekey: ${{ steps.rust-toolchain.outputs.cachekey }}
+          mode: restore
 
       - name: Build documentation EPUB
         uses: ./.github/actions/build-docs-epub

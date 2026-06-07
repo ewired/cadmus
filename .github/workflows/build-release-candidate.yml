@@ -43,8 +43,14 @@ jobs:
           ref: ${{ steps.pr.outputs.branch }}
 
       - uses: dtolnay/rust-toolchain@stable
+        id: rust-toolchain
         with:
           targets: arm-unknown-linux-gnueabihf
+
+      - uses: ./.github/actions/cargo-cache
+        with:
+          cachekey: ${{ steps.rust-toolchain.outputs.cachekey }}
+          mode: restore
 
       - name: Build Kobo artifacts
         uses: ./.github/actions/build-kobo

@@ -18,6 +18,11 @@ const WARMTH_TRANSITION_HOURS: f64 = 1.5;
 /// `night_brightness` while the sun is down. Warmth ramps over a fixed
 /// transition window before sunrise and before sunset, reaching fully cool at
 /// sunrise and fully warm at sunset.
+///
+/// When sunrise or sunset cannot be determined (polar regions), the function
+/// falls back to constant levels: polar night (no sunrise) returns
+/// `night_brightness` with full warmth, polar day (no sunset) returns
+/// `current_intensity` with zero warmth.
 pub fn compute_auto_frontlight_levels(
     now: DateTime<Local>,
     coordinates: Coordinates,
@@ -29,6 +34,22 @@ pub fn compute_auto_frontlight_levels(
     let solar_day = sunrise::SolarDay::new(coords, today);
     let sunrise_utc = solar_day.event_time(sunrise::SolarEvent::Sunrise);
     let sunset_utc = solar_day.event_time(sunrise::SolarEvent::Sunset);
+
+    let (sunrise_utc, sunset_utc) = match (sunrise_utc, sunset_utc) {
+        (Some(sr), Some(ss)) => (sr, ss),
+        (None, None) | (None, Some(_)) => {
+            return LightLevels {
+                intensity: night_brightness,
+                warmth: LightLevel::from_fraction(1.0),
+            };
+        }
+        (Some(_), None) => {
+            return LightLevels {
+                intensity: current_intensity,
+                warmth: LightLevel::from_fraction(0.0),
+            };
+        }
+    };
 
     let minutes_since_midnight =
         |dt: NaiveDateTime| -> f64 { (dt.hour() as f64 * 60.0) + dt.minute() as f64 };
@@ -113,10 +134,12 @@ mod tests {
         let day = sunrise::SolarDay::new(coords.into(), date);
         let sr = day
             .event_time(sunrise::SolarEvent::Sunrise)
+            .expect("test location must have sunrise")
             .with_timezone(&Local)
             .naive_local();
         let ss = day
             .event_time(sunrise::SolarEvent::Sunset)
+            .expect("test location must have sunset")
             .with_timezone(&Local)
             .naive_local();
         (
@@ -151,7 +174,8 @@ mod tests {
             london().into(),
             chrono::NaiveDate::from_ymd_opt(2025, 6, 21).unwrap(),
         )
-        .event_time(sunrise::SolarEvent::Sunrise);
+        .event_time(sunrise::SolarEvent::Sunrise)
+        .expect("London must have sunrise");
         let sr_local = sr_utc.with_timezone(&Local);
         let levels = compute_auto_frontlight_levels(sr_local, london(), 10.0.into(), 50.0.into());
         assert!(
@@ -167,7 +191,8 @@ mod tests {
             london().into(),
             chrono::NaiveDate::from_ymd_opt(2025, 6, 21).unwrap(),
         )
-        .event_time(sunrise::SolarEvent::Sunset);
+        .event_time(sunrise::SolarEvent::Sunset)
+        .expect("London must have sunset");
         let ss_local = ss_utc.with_timezone(&Local);
         let levels = compute_auto_frontlight_levels(ss_local, london(), 10.0.into(), 50.0.into());
         assert!(

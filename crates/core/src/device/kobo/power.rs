@@ -4,9 +4,8 @@
 //! It handles touch screen power state transitions, filesystem buffer flushes,
 //! and writing to kernel sysfs nodes to trigger suspend to RAM.
 
-use crate::device::Model;
-use crate::device::power::error::PowerError;
-use crate::device::power::manager::PowerManager;
+use crate::device::kobo::Model;
+use crate::device::power::{PowerError, PowerManager};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -29,8 +28,8 @@ const NEOCMD_PATH: &str = "/sys/devices/virtual/input/input1/neocmd";
 /// use cadmus_core::device::Model;
 /// use cadmus_core::device::power::PowerManager;
 ///
-/// // Access via the global device singleton
-/// if let Ok(power) = CURRENT_DEVICE.power_manager() {
+/// let model = Model::detect();
+/// if let Ok(power) = model.power_manager() {
 ///     power.suspend().ok();
 /// }
 /// ```
@@ -126,7 +125,7 @@ impl PowerManager for KoboPowerManager {
 
     fn init_cores(&self) -> Result<(), PowerError> {
         let cpu_dir = Path::new("/sys/devices/system/cpu");
-        let discovered = super::discover_cores(cpu_dir).map_err(|e| {
+        let discovered = crate::device::power::discover_cores(cpu_dir).map_err(|e| {
             tracing::warn!(error = %e, "Failed to discover CPU cores");
             e
         })?;
@@ -184,12 +183,4 @@ impl PowerManager for KoboPowerManager {
             None => Ok(()),
         }
     }
-}
-
-/// Creates a Kobo PowerManager instance.
-///
-/// This factory function instantiates a box-wrapped `KoboPowerManager` implementing
-/// the [`PowerManager`] trait.
-pub fn create_power_manager(model: Model) -> Result<Box<dyn PowerManager>, PowerError> {
-    Ok(Box::new(KoboPowerManager::new(model)))
 }

@@ -1,14 +1,48 @@
 use crate::db::types::UnixTimestamp;
+use crate::device::AppDevice;
+use crate::device::DeviceIdentity as _;
+use crate::device::DevicePaths as _;
+use crate::settings::Settings;
 use anyhow::Error;
 use once_cell::sync::Lazy;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::future::Future;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Mutex;
 
-type MigrationFn =
-    for<'a> fn(&'a SqlitePool) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'a>>;
+/// Device paths captured for runtime migrations.
+///
+/// Async migrations require [`Send`] futures, so the active device is snapshotted
+/// when migrations run rather than borrowed for the duration of each migration.
+#[derive(Clone, Debug)]
+pub struct MigrationDevice {
+    pub install_dir: PathBuf,
+    pub data_dir: PathBuf,
+    pub dpi: u16,
+}
+
+impl MigrationDevice {
+    pub fn new(device: &AppDevice) -> Self {
+        Self {
+            install_dir: device.install_dir(),
+            data_dir: device.data_dir(),
+            dpi: device.dpi(),
+        }
+    }
+}
+
+/// Runtime migration inputs supplied by the active device at startup.
+pub struct MigrationContext<'a> {
+    pub pool: &'a SqlitePool,
+    pub device: MigrationDevice,
+    pub settings: &'a mut Settings,
+}
+
+type MigrationFn = for<'a> fn(
+    &'a mut MigrationContext<'a>,
+) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'a>>;
 
 static REGISTRY: Lazy<Mutex<HashMap<&'static str, MigrationFn>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
@@ -31,7 +65,7 @@ static REGISTRY: Lazy<Mutex<HashMap<&'static str, MigrationFn>>> =
 ///
 /// * `$id` — Stable string literal identifying this migration in
 ///   `_cadmus_migrations`. Never change after deployment.
-/// * The `async fn` — Must accept `&SqlitePool` and return
+/// * The `async fn` — Must accept `&mut MigrationContext` and return
 ///   `Result<(), anyhow::Error>`.
 ///
 /// The generated inner module is named after `$name`, so `$name` must be
@@ -64,13 +98,13 @@ static REGISTRY: Lazy<Mutex<HashMap<&'static str, MigrationFn>>> =
 ///
 /// ```rust
 /// mod my_migrations {
-///     use sqlx::SqlitePool;
+///     use cadmus_core::db::migrations::MigrationContext;
 ///
 ///     cadmus_core::migration!(
 ///         /// Backfills metadata from legacy storage.
 ///         "v1_backfill_metadata",
-///         async fn backfill_metadata(pool: &SqlitePool) {
-///             // sqlx::query!(...).execute(pool).await?;
+///         async fn backfill_metadata(ctx: &mut MigrationContext<'_>) {
+///             // sqlx::query!(...).execute(ctx.pool).await?;
 ///             Ok(())
 ///         }
 ///     );
@@ -78,18 +112,18 @@ static REGISTRY: Lazy<Mutex<HashMap<&'static str, MigrationFn>>> =
 /// ```
 #[macro_export]
 macro_rules! migration {
-    ($(#[$attr:meta])* $id:literal, async fn $name:ident($pool:ident : &$pool_ty:ty) $body:block) => {
-        $crate::migration!(@internal $(#[$attr])* $id, $name, $pool, $body);
+    ($(#[$attr:meta])* $id:literal, async fn $name:ident($ctx:ident : &mut $ctx_ty:ty) $body:block) => {
+        $crate::migration!(@internal $(#[$attr])* $id, $name, $ctx, $body);
     };
-    (@internal $(#[$attr:meta])* $id:literal, $name:ident, $pool:ident, $body:block) => {
+    (@internal $(#[$attr:meta])* $id:literal, $name:ident, $ctx:ident, $body:block) => {
         $(#[$attr])*
         #[doc = ""]
         #[doc = concat!("**Migration ID:** `", $id, "`")]
         #[doc = ""]
         #[doc = "To re-run this migration, delete its tracking row:"]
         #[doc = concat!("```sql\nDELETE FROM _cadmus_migrations WHERE id = '", $id, "';\n```")]
-        #[cfg_attr(feature = "tracing", tracing::instrument(skip($pool), fields(migration_id = $id)))]
-        async fn $name($pool: &::sqlx::SqlitePool) -> ::std::result::Result<(), ::anyhow::Error> {
+        #[cfg_attr(feature = "tracing", tracing::instrument(skip($ctx), fields(migration_id = $id)))]
+        async fn $name($ctx: &mut $crate::db::migrations::MigrationContext<'_>) -> ::std::result::Result<(), ::anyhow::Error> {
             $body
         }
 
@@ -108,17 +142,17 @@ macro_rules! migration {
 
             #[$crate::ctor::ctor(unsafe)]
             fn __register() {
-                fn __boxed(
-                    pool: &::sqlx::SqlitePool,
+                fn __boxed<'a>(
+                    ctx: &'a mut $crate::db::migrations::MigrationContext<'a>,
                 ) -> ::std::pin::Pin<
                     ::std::boxed::Box<
                         dyn ::std::future::Future<
                             Output = ::std::result::Result<(), ::anyhow::Error>,
                         > + ::std::marker::Send
-                        + '_,
+                        + 'a,
                     >,
                 > {
-                    ::std::boxed::Box::pin(super::$name(pool))
+                    ::std::boxed::Box::pin(super::$name(ctx))
                 }
                 $crate::db::migrations::register($id, __boxed);
             }
@@ -160,8 +194,8 @@ impl MigrationRunner {
     }
 
     /// Execute all pending registered migrations against the database.
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
-    pub async fn run_all(&self) -> Result<(), Error> {
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, device, settings)))]
+    pub async fn run_all(&self, device: &AppDevice, settings: &mut Settings) -> Result<(), Error> {
         let registry = REGISTRY
             .lock()
             .expect("migration registry lock should not be poisoned")
@@ -193,7 +227,12 @@ impl MigrationRunner {
         for (id, migration_fn) in pending {
             tracing::info!(migration_id = id, "running migration");
 
-            let result = migration_fn(&self.pool).await;
+            let mut ctx = MigrationContext {
+                pool: &self.pool,
+                device: MigrationDevice::new(device),
+                settings,
+            };
+            let result = migration_fn(&mut ctx).await;
             let status = match &result {
                 Ok(_) => "success",
                 Err(_) => "failed",

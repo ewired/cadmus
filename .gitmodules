@@ -25,7 +25,7 @@
 [submodule "thirdparty/libwebp"]
 	path = thirdparty/libwebp
 	url = https://github.com/webmproject/libwebp
-	branch = v1.2.3
+	branch = v1.6.0
 [submodule "thirdparty/freetype2"]
 	path = thirdparty/freetype2
 	url = https://github.com/freetype/freetype

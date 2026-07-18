@@ -123,6 +123,7 @@ pub(crate) fn native_cache_complete_at(git_root: &Path, artifact_root: &Path) ->
     let libwebp_dir = deps_root.join("libwebp");
     let libwebp_libs_dir = libwebp_dir.join("src/.libs");
     let libwebp_a = libwebp_libs_dir.join("libwebp.a");
+    let libwebp_sharpyuv_libs_dir = libwebp_dir.join("sharpyuv/.libs");
     let libwebp_demux_libs_dir = libwebp_dir.join("src/demux/.libs");
     let mupdf_dir = deps_root.join("mupdf");
     let mupdf_a = mupdf_dir.join("build/release/libmupdf.a");
@@ -132,6 +133,7 @@ pub(crate) fn native_cache_complete_at(git_root: &Path, artifact_root: &Path) ->
     markers::is_built(git_root, &libwebp_dir, "thirdparty/libwebp")
         && libwebp_a.exists()
         && libwebp_libs_dir.is_dir()
+        && libwebp_sharpyuv_libs_dir.is_dir()
         && libwebp_demux_libs_dir.is_dir()
         && markers::is_built(git_root, &mupdf_dir, "thirdparty/mupdf")
         && mupdf_a.exists()
@@ -402,6 +404,7 @@ pub fn build_mupdf_native(root: &Path) -> Result<()> {
 
     let xlibs = format!(
         "-L{root}/target/cadmus-build-deps/{target}/libwebp/src/.libs -lwebp \
+         -L{root}/target/cadmus-build-deps/{target}/libwebp/sharpyuv/.libs -lsharpyuv \
          -L{root}/target/cadmus-build-deps/{target}/libwebp/src/demux/.libs -lwebpdemux",
         root = root.display(),
         target = target
@@ -432,6 +435,7 @@ fn collect_system_cflags() -> Result<String> {
         "libopenjp2",
         "libjpeg",
         "libwebp",
+        "libsharpyuv",
         "zlib",
         "jbig2dec",
         "gumbo",
@@ -566,8 +570,10 @@ mod tests {
         let fixture = NativeMupdfFixture::new(artifact_root.path());
         let libwebp_dir = build_root(artifact_root.path()).join("libwebp");
         let libwebp_libs_dir = libwebp_dir.join("src/.libs");
+        let libwebp_sharpyuv_libs_dir = libwebp_dir.join("sharpyuv/.libs");
         let libwebp_demux_libs_dir = libwebp_dir.join("src/demux/.libs");
         std::fs::create_dir_all(&libwebp_libs_dir).unwrap();
+        std::fs::create_dir_all(&libwebp_sharpyuv_libs_dir).unwrap();
         std::fs::create_dir_all(&libwebp_demux_libs_dir).unwrap();
         std::fs::write(libwebp_libs_dir.join("libwebp.a"), b"").unwrap();
         markers::mark_built(git_root, &libwebp_dir, "libwebp", "thirdparty/libwebp").unwrap();
@@ -583,8 +589,10 @@ mod tests {
         let fixture = NativeMupdfFixture::new(artifact_root.path());
         let libwebp_dir = build_root(artifact_root.path()).join("libwebp");
         let libwebp_libs_dir = libwebp_dir.join("src/.libs");
+        let libwebp_sharpyuv_libs_dir = libwebp_dir.join("sharpyuv/.libs");
         let libwebp_demux_libs_dir = libwebp_dir.join("src/demux/.libs");
         std::fs::create_dir_all(&libwebp_libs_dir).unwrap();
+        std::fs::create_dir_all(&libwebp_sharpyuv_libs_dir).unwrap();
         std::fs::create_dir_all(&libwebp_demux_libs_dir).unwrap();
         std::fs::write(libwebp_libs_dir.join("libwebp.a"), b"").unwrap();
         markers::mark_built(git_root, &libwebp_dir, "libwebp", "thirdparty/libwebp").unwrap();
@@ -601,6 +609,25 @@ mod tests {
         let fixture = NativeMupdfFixture::new(artifact_root.path());
         let libwebp_dir = build_root(artifact_root.path()).join("libwebp");
         let libwebp_libs_dir = libwebp_dir.join("src/.libs");
+        let libwebp_sharpyuv_libs_dir = libwebp_dir.join("sharpyuv/.libs");
+        let libwebp_demux_libs_dir = libwebp_dir.join("src/demux/.libs");
+        std::fs::create_dir_all(&libwebp_libs_dir).unwrap();
+        std::fs::create_dir_all(&libwebp_sharpyuv_libs_dir).unwrap();
+        std::fs::create_dir_all(&libwebp_demux_libs_dir).unwrap();
+        std::fs::write(libwebp_libs_dir.join("libwebp.a"), b"").unwrap();
+        markers::mark_built(git_root, &libwebp_dir, "libwebp", "thirdparty/libwebp").unwrap();
+        markers::mark_built(git_root, &fixture.mupdf_dir, "mupdf", "thirdparty/mupdf").unwrap();
+
+        assert!(native_cache_complete_at(git_root, artifact_root.path()));
+    }
+
+    #[test]
+    fn native_cache_complete_false_when_sharpyuv_libs_missing() {
+        let git_root = workspace_root();
+        let artifact_root = artifact_tempdir();
+        let fixture = NativeMupdfFixture::new(artifact_root.path());
+        let libwebp_dir = build_root(artifact_root.path()).join("libwebp");
+        let libwebp_libs_dir = libwebp_dir.join("src/.libs");
         let libwebp_demux_libs_dir = libwebp_dir.join("src/demux/.libs");
         std::fs::create_dir_all(&libwebp_libs_dir).unwrap();
         std::fs::create_dir_all(&libwebp_demux_libs_dir).unwrap();
@@ -608,7 +635,7 @@ mod tests {
         markers::mark_built(git_root, &libwebp_dir, "libwebp", "thirdparty/libwebp").unwrap();
         markers::mark_built(git_root, &fixture.mupdf_dir, "mupdf", "thirdparty/mupdf").unwrap();
 
-        assert!(native_cache_complete_at(git_root, artifact_root.path()));
+        assert!(!native_cache_complete_at(git_root, artifact_root.path()));
     }
 
     #[test]

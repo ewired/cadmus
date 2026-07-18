@@ -55,6 +55,8 @@ pub fn build_mupdf(build_dir: &Path) -> Result<()> {
         "-lz",
         "-L../libwebp/src/.libs",
         "-lwebp",
+        "-L../libwebp/sharpyuv/.libs",
+        "-lsharpyuv",
         "-L../libwebp/src/demux/.libs",
         "-lwebpdemux",
         "-shared",

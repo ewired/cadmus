@@ -51,6 +51,7 @@ pub const SONAMES: &[&str] = &[
     "libharfbuzz.so",
     "libgumbo.so",
     "libwebp.so",
+    "libsharpyuv.so",
     "libwebpdemux.so",
     "libdjvulibre.so",
     "libmupdf.so",
@@ -100,6 +101,10 @@ pub const BUILT_LIBRARY_COPIES: &[(&str, &str)] = &[
     ),
     ("thirdparty/jbig2dec/.libs/libjbig2dec.so", "libjbig2dec.so"),
     ("thirdparty/libwebp/src/.libs/libwebp.so", "libwebp.so"),
+    (
+        "thirdparty/libwebp/sharpyuv/.libs/libsharpyuv.so",
+        "libsharpyuv.so",
+    ),
     (
         "thirdparty/libwebp/src/demux/.libs/libwebpdemux.so",
         "libwebpdemux.so",

@@ -141,6 +141,10 @@ fn emit_native_link_directives(root: &Path, target: &str) -> Result<()> {
                 libwebp.display()
             );
             println!(
+                "cargo:rustc-link-search=native={}/sharpyuv/.libs",
+                libwebp.display()
+            );
+            println!(
                 "cargo:rustc-link-search=native={}/src/demux/.libs",
                 libwebp.display()
             );
@@ -150,6 +154,10 @@ fn emit_native_link_directives(root: &Path, target: &str) -> Result<()> {
             println!("cargo:rustc-link-search=target/mupdf_wrapper/Darwin");
             println!(
                 "cargo:rustc-link-search=native={}/src/.libs",
+                libwebp.display()
+            );
+            println!(
+                "cargo:rustc-link-search=native={}/sharpyuv/.libs",
                 libwebp.display()
             );
             println!(
@@ -181,6 +189,7 @@ fn emit_common_link_directives() {
     println!("cargo:rustc-link-lib=openjp2");
     println!("cargo:rustc-link-lib=jbig2dec");
     println!("cargo:rustc-link-lib=webp");
+    println!("cargo:rustc-link-lib=sharpyuv");
     println!("cargo:rustc-link-lib=webpdemux");
 }
 

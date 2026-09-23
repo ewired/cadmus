@@ -1,5 +1,129 @@
 # Changelog
 
+## [0.10.1](https://github.com/ewired/cadmus/compare/v0.11.0...v0.10.1) (2026-09-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **settings:** Power settings moved out of General into a new Power category; UI category layout changed.
+* **all:** The pen setting's unit has been changed to `mm` instead of pixels. It should be auto migrated, but keep an eye out in case things go wrong.
+* **Import:** The database options from the library menu have been removed. There is no longer a need to manually flush data. To manually trigger a full import scan, there is a new button in the settings menu under the import category.
+* **Library:** Unsupported files are no longer fingerprinted and indexed into the sqlite DB. This is configured via the `allowed_kinds` setting.
+* **dictionary:** Fuzzy dictionary search no longer corrects first-character typos Fuzzy word lookup now uses a 3-character prefix pre-filter for performance. Searches where the query and the target word differ in the first three characters will no longer return results. For example, searching `"bas"` will not suggest `"bar"`.
+* **library:** hashes are now calculated using BLAKE3 instead of the custom implementation using mtime which caused inconsistent hashing. BLAKE3 is more CPU and battery intensive, and slower.
+
+### Features
+
+* add suspend and power off to exit menu ([#330](https://github.com/ewired/cadmus/issues/330)) ([6cb9052](https://github.com/ewired/cadmus/commit/6cb905244e8edebdd227c17d8743c5c6bc5b8cf0))
+* add WiFi status monitor for Kobo devices ([#324](https://github.com/ewired/cadmus/issues/324)) ([d89ccaa](https://github.com/ewired/cadmus/commit/d89ccaaa5302b1c1f80454f00abccccdc3f82bca))
+* **app:** main-loop soft-suspend lease + TRACE ([#845](https://github.com/ewired/cadmus/issues/845)) ([dbd5165](https://github.com/ewired/cadmus/commit/dbd5165162dab895498d60bbd23724ae2d737e3d))
+* **Core:** add automatic date and time sync via NTP ([#576](https://github.com/ewired/cadmus/issues/576)) ([a7fa6e8](https://github.com/ewired/cadmus/commit/a7fa6e89ea9c63578eebb676859d206035d57e12))
+* **Core:** build SQLite from source with DELETE … LIMIT support ([#584](https://github.com/ewired/cadmus/issues/584)) ([ac5daf0](https://github.com/ewired/cadmus/commit/ac5daf0042e4af045a5f6ce7f531e35592ae3330))
+* **device:** add DeviceLeds and Kobo LED control ([#803](https://github.com/ewired/cadmus/issues/803)) ([06ad0d5](https://github.com/ewired/cadmus/commit/06ad0d51460e3664febf07dec20a0ec652be1b59))
+* **Device:** route data files to SD card ([#553](https://github.com/ewired/cadmus/issues/553)) ([f19d901](https://github.com/ewired/cadmus/commit/f19d901640c6945272d43bfba30fd60021b4363d))
+* **dictionaries:** Add download state tracking ([#396](https://github.com/ewired/cadmus/issues/396)) ([da509ae](https://github.com/ewired/cadmus/commit/da509aef81d0a0a55b39d336919a633dc4c5a419))
+* **dictionaries:** add native monolingual dictionary support ([#378](https://github.com/ewired/cadmus/issues/378)) ([9a901a5](https://github.com/ewired/cadmus/commit/9a901a5e22dbc78ff4e88186cafa4a4957c8c5f5))
+* **dictionary:** index files into SQLite ([#447](https://github.com/ewired/cadmus/issues/447)) ([ef75769](https://github.com/ewired/cadmus/commit/ef75769e8285f231c4af188cc6aa195b22c72c3a))
+* **dictionary:** track installed version with cache invalidation ([#395](https://github.com/ewired/cadmus/issues/395)) ([8de943d](https://github.com/ewired/cadmus/commit/8de943d7bbff001445333bc624e086e7b5653235))
+* **fonts:** ship NV Disleksio ([#1003](https://github.com/ewired/cadmus/issues/1003)) ([647e2a5](https://github.com/ewired/cadmus/commit/647e2a5797ff52580f24f9bedf00c507e39b0af8))
+* **fonts:** ship NV fonts and make Libron default ([#700](https://github.com/ewired/cadmus/issues/700)) ([aaf4b9b](https://github.com/ewired/cadmus/commit/aaf4b9bce2dbe854c405b4e384e7479062759734))
+* **Frontlight:** auto brightness and warmth ([#590](https://github.com/ewired/cadmus/issues/590)) ([7e1414d](https://github.com/ewired/cadmus/commit/7e1414d5fe5ccb9494d593060d112a08aa6c1191))
+* **Frontlight:** increment, decrement buttons for finegrain control ([#706](https://github.com/ewired/cadmus/issues/706)) ([6cc65b5](https://github.com/ewired/cadmus/commit/6cc65b5ba99c841085b958b6ef066d4af7287ce0))
+* **Import:** add incremental library import ([1ee4218](https://github.com/ewired/cadmus/commit/1ee421815a229679067ba7a0036e3ad02c01866d))
+* **inhibitor:** add Full kind implementation to block exit ([#930](https://github.com/ewired/cadmus/issues/930)) ([d029cc5](https://github.com/ewired/cadmus/commit/d029cc54f3fcdede931767cdf04deb47db85a9a6))
+* **inhibitor:** route SoftSuspend through Inhibitor ([#925](https://github.com/ewired/cadmus/issues/925)) ([ed7cdb4](https://github.com/ewired/cadmus/commit/ed7cdb41b3f0a6bdd75d40a6512814ac311232f1))
+* **Intermission:** add blank screens ([#483](https://github.com/ewired/cadmus/issues/483)) ([75add0d](https://github.com/ewired/cadmus/commit/75add0d9822eef0510afdc0905a5b72f33c56fe9))
+* **intermission:** add calendar intermission screen ([#402](https://github.com/ewired/cadmus/issues/402)) ([3f36f25](https://github.com/ewired/cadmus/commit/3f36f258673267305fc5326154f4140f4742a448))
+* **intermissions:** add global fill-color setting ([#895](https://github.com/ewired/cadmus/issues/895)) ([2492209](https://github.com/ewired/cadmus/commit/249220953f744aed6209109a55100f99941667ad)), closes [#484](https://github.com/ewired/cadmus/issues/484)
+* **keyboard:** add terminal keyboard layout ([#724](https://github.com/ewired/cadmus/issues/724)) ([97f6042](https://github.com/ewired/cadmus/commit/97f6042c1c51c6ae2dc58eec1a9093c6813375f5))
+* **Kobo:** enable multi-core when possible ([#542](https://github.com/ewired/cadmus/issues/542)) ([8817d6e](https://github.com/ewired/cadmus/commit/8817d6e3cc3b8217f3d953d2653d93173bc245db))
+* **kobo:** switch between main and test installs ([#771](https://github.com/ewired/cadmus/issues/771)) ([5c2ce9e](https://github.com/ewired/cadmus/commit/5c2ce9e41429f2f8dfb6406e573e29daf8e0d668))
+* **library:** add BookStatus lifecycle column ([#867](https://github.com/ewired/cadmus/issues/867)) ([eb32b98](https://github.com/ewired/cadmus/commit/eb32b98490f5cdad149b57ba57d5d22f3ac81aad))
+* **Library:** async thumbnail extraction ([#517](https://github.com/ewired/cadmus/issues/517)) ([86a0a36](https://github.com/ewired/cadmus/commit/86a0a3687ffa90034ca5bd839a5961ca6dfbf3e7))
+* **library:** Library import is no async. ([7fbf304](https://github.com/ewired/cadmus/commit/7fbf304fdfb84df1d4c6fcd661adc80ef12c66bc))
+* **library:** switch fingerprints to BLAKE3 content hash ([#385](https://github.com/ewired/cadmus/issues/385)) ([7b03de3](https://github.com/ewired/cadmus/commit/7b03de3cac4f79451e7d56b8e0a63d325556454d)), closes [#184](https://github.com/ewired/cadmus/issues/184)
+* **ota:** cancel in-progress downloads ([#900](https://github.com/ewired/cadmus/issues/900)) ([db5e20c](https://github.com/ewired/cadmus/commit/db5e20c9d6481237d23e90408eed22e469919f83))
+* **ota:** deploy KoboRoot via atomic rename ([09e23a0](https://github.com/ewired/cadmus/commit/09e23a098fd5b1f80a461301ebf9f56b5474f1fd))
+* **power:** add SoftSuspendSession and wake_lock ([#810](https://github.com/ewired/cadmus/issues/810)) ([61eabe6](https://github.com/ewired/cadmus/commit/61eabe693809f2fb83b034374b9dde100ea6c113))
+* **power:** deep idle via soft-suspend mem ([#835](https://github.com/ewired/cadmus/issues/835)) ([c0e981a](https://github.com/ewired/cadmus/commit/c0e981a8be5c9af3f73549ed42711f50bbb3bce5))
+* **Reader:** support webp via MuPDF ([#456](https://github.com/ewired/cadmus/issues/456)) ([bf96995](https://github.com/ewired/cadmus/commit/bf9699588a2aaae707de72482b2d1eda65c05fba))
+* **Settigns Editor:** add refresh rate settings ([#478](https://github.com/ewired/cadmus/issues/478)) ([58cb13e](https://github.com/ewired/cadmus/commit/58cb13e17cc50d866ad3fa276f6c549b92049dd9))
+* **Settings Editor:** add allowed and dithered file kinds  ([#545](https://github.com/ewired/cadmus/issues/545)) ([ab4e408](https://github.com/ewired/cadmus/commit/ab4e4086134c6240e787d026adeeaf00a353d1ce))
+* **settings editor:** add pagination to CategoryEditor ([#377](https://github.com/ewired/cadmus/issues/377)) ([037c24c](https://github.com/ewired/cadmus/commit/037c24cef9a433b59d523665ced3384e7a564948))
+* **Settings Editor:** all settings fields are now translatable ([51fa0e9](https://github.com/ewired/cadmus/commit/51fa0e9f130ab03dccd61a9c57a3b3e5c2f0b437))
+* **Settings Editor:** confirmation before dictionary downloads ([#533](https://github.com/ewired/cadmus/issues/533)) ([2ba249b](https://github.com/ewired/cadmus/commit/2ba249bf201a3c10c6eab30629f1e4f84058f697))
+* **settings editor:** expose import settings ([#341](https://github.com/ewired/cadmus/issues/341)) ([5dc926e](https://github.com/ewired/cadmus/commit/5dc926e34c142a88feafd5b2cefb3a1bff58b581))
+* **settings:** add AutosleepMode under Power ([#842](https://github.com/ewired/cadmus/issues/842)) ([9e7c373](https://github.com/ewired/cadmus/commit/9e7c37380e1c63597d853e5d8821f8a0910ceebe))
+* **settings:** expose default font family in the settings editor ([#891](https://github.com/ewired/cadmus/issues/891)) ([ede7b43](https://github.com/ewired/cadmus/commit/ede7b435276deb4848808c96a19f0dc901612831))
+* **settings:** make NTP server configurable ([#766](https://github.com/ewired/cadmus/issues/766)) ([b4012ce](https://github.com/ewired/cadmus/commit/b4012ce3a5b1fed2ca324e8d6b8ec443f5a9332a))
+* show build provenance in About ([#534](https://github.com/ewired/cadmus/issues/534)) ([28642f6](https://github.com/ewired/cadmus/commit/28642f60efea27a22ffad42151530e3a961118ba))
+* **soft-suspend:** lease hub messages for in-flight input ([#848](https://github.com/ewired/cadmus/issues/848)) ([afab447](https://github.com/ewired/cadmus/commit/afab447938b837e9888a5fd079aecbb7af786900))
+* **soft-suspend:** wire wifi and task holders ([#852](https://github.com/ewired/cadmus/issues/852)) ([1753f9a](https://github.com/ewired/cadmus/commit/1753f9ad556a3b89f835e0396812e8939de3dd63))
+* **SQLite:** auto database backup and restore ([#605](https://github.com/ewired/cadmus/issues/605)) ([ddd29c9](https://github.com/ewired/cadmus/commit/ddd29c9b35b2acd45264094cd7f38b33c59c00ce))
+* **Startup:** open last read file on startup ([#592](https://github.com/ewired/cadmus/issues/592)) ([a2f89ef](https://github.com/ewired/cadmus/commit/a2f89ef0098e67cb6b080750dd8d967aa8a3678a))
+* **System Info:** display enabled Cargo features ([#662](https://github.com/ewired/cadmus/issues/662)) ([e5c438a](https://github.com/ewired/cadmus/commit/e5c438a3c84b57d1721172184e78db53d43fc5e6))
+* **Translation:** init for French ([#509](https://github.com/ewired/cadmus/issues/509)) ([786b651](https://github.com/ewired/cadmus/commit/786b651c545c4a5659d91e4571862b4780430e86))
+* **website:** add Planning card to home page ([#641](https://github.com/ewired/cadmus/issues/641)) ([e95635a](https://github.com/ewired/cadmus/commit/e95635a538c4af481a421e3dc8b9949d8b9a9833))
+* **website:** add translation support ([#647](https://github.com/ewired/cadmus/issues/647)) ([621d669](https://github.com/ewired/cadmus/commit/621d669b0518fc5e1400daa3b9ac19aad0521e26))
+* **website:** migrate to Next.js + Kumo ([#626](https://github.com/ewired/cadmus/issues/626)) ([694f630](https://github.com/ewired/cadmus/commit/694f630e28fb70d47b328dc0aa93fec4c3f20cfe))
+* **wifi:** add modes, named leases, and idle auto-disable ([#784](https://github.com/ewired/cadmus/issues/784)) ([3a9a1d9](https://github.com/ewired/cadmus/commit/3a9a1d9855d04589ad168677ae1516e52a72fe00))
+* **wifi:** migrate network consumers onto leases ([#786](https://github.com/ewired/cadmus/issues/786)) ([0be4f76](https://github.com/ewired/cadmus/commit/0be4f76bc0641a4472815097ad95e87c83706853))
+* **wifi:** query IP/ESSID via dhcpcd-dbus ([#763](https://github.com/ewired/cadmus/issues/763)) ([6ea5901](https://github.com/ewired/cadmus/commit/6ea590142e2371d2b13e6599f31c0f85da10d14e))
+
+
+### Bug Fixes
+
+* **Auto Frontlight:** use absolute solar event times ([#701](https://github.com/ewired/cadmus/issues/701)) ([de18ba9](https://github.com/ewired/cadmus/commit/de18ba9ebe3da0ab97860fc7055fb872fb33329a))
+* **db:** verify WAL checkpoint completion before backup copy ([90a1bae](https://github.com/ewired/cadmus/commit/90a1bae6608c489da7d7cacf31940903c3bcd096))
+* **deps:** update rust crate syn to v3 ([#800](https://github.com/ewired/cadmus/issues/800)) ([d8d8bfc](https://github.com/ewired/cadmus/commit/d8d8bfcf4394eff1be4c48a1e2b37467ca1ead17))
+* **dict:** stage install then trust registry ([#994](https://github.com/ewired/cadmus/issues/994)) ([bb461cc](https://github.com/ewired/cadmus/commit/bb461cca545b492486775d9f0197e04a7fd83996))
+* **emulator:** migrate to SDL3 and Linux graphics deps ([#863](https://github.com/ewired/cadmus/issues/863)) ([9884029](https://github.com/ewired/cadmus/commit/9884029e82fa6a525a4161bbf421fc06f74fdebb)), closes [#855](https://github.com/ewired/cadmus/issues/855)
+* **html:** keep start_command_index in sync after page split ([#996](https://github.com/ewired/cadmus/issues/996)) ([38edee8](https://github.com/ewired/cadmus/commit/38edee81e80e5aeb3c85647db32c5a08f916d4b2))
+* **HTML:** promote inline elements with block descendants to blocks ([#588](https://github.com/ewired/cadmus/issues/588)) ([14f96ad](https://github.com/ewired/cadmus/commit/14f96ad35c9cbf6bb48b785b16c145635aa3dac5))
+* **Import:** stop renaming legacy library data files ([#538](https://github.com/ewired/cadmus/issues/538)) ([b4b106f](https://github.com/ewired/cadmus/commit/b4b106f148842575dd026511efb8b49b08ab474b))
+* **kobo:** wake the touch layer on resume ([025a013](https://github.com/ewired/cadmus/commit/025a0137921fd935073b8d2f0c9b255078782aa9))
+* **library:** announce import only when it completes ([#979](https://github.com/ewired/cadmus/issues/979)) ([119f3cb](https://github.com/ewired/cadmus/commit/119f3cba86e392bd61117a7df18eaa5bf7d85bd8))
+* **library:** flush import scan in one transaction ([#969](https://github.com/ewired/cadmus/issues/969)) ([4fd7510](https://github.com/ewired/cadmus/commit/4fd7510c1004aa0e2f220f4c858799a52a87ecc6))
+* **Library:** only import allowed_kinds ([45b03c6](https://github.com/ewired/cadmus/commit/45b03c68253f29b3529827acd35b3c63b0147704))
+* **library:** purge books and thumbs atomically ([#953](https://github.com/ewired/cadmus/issues/953)) ([a6d0131](https://github.com/ewired/cadmus/commit/a6d0131c2d0fa240c3dbffbe0b92e795404ec85a))
+* **Library:** remove books with empty paths on import ([#485](https://github.com/ewired/cadmus/issues/485)) ([eb6f2a8](https://github.com/ewired/cadmus/commit/eb6f2a880206829888d73d0aadc536f8b8d20d67))
+* **library:** use natural sort order ([#370](https://github.com/ewired/cadmus/issues/370)) ([f053a28](https://github.com/ewired/cadmus/commit/f053a287dbbd74c3195241401347d6d09401b319)), closes [#297](https://github.com/ewired/cadmus/issues/297)
+* **Notifications:** transfer on back navigation ([#550](https://github.com/ewired/cadmus/issues/550)) ([63349b1](https://github.com/ewired/cadmus/commit/63349b1b9ccb4a2c58f7c8ed3a326bdb564954f3))
+* **OTA:** clean bundled assets before ota install ([#511](https://github.com/ewired/cadmus/issues/511)) ([cf89a70](https://github.com/ewired/cadmus/commit/cf89a70b15f08aff88c23cd776ffacb6bcf9312d))
+* **ota:** increase artifacts per_page to 50 to avoid pagination truncation ([#560](https://github.com/ewired/cadmus/issues/560)) ([a5c78cf](https://github.com/ewired/cadmus/commit/a5c78cf951b762147d7768543c7001963832beb5))
+* **ota:** skip cancelled PR Cargo runs ([#789](https://github.com/ewired/cadmus/issues/789)) ([da6768d](https://github.com/ewired/cadmus/commit/da6768d62de9d9d86c087eb6cdffe4c89480e945))
+* **OTA:** use Cadmus tmp dir for OTA downloads ([#460](https://github.com/ewired/cadmus/issues/460)) ([6fab681](https://github.com/ewired/cadmus/commit/6fab6819ceda574c4c95910fabf0887d5612254d))
+* **rtc:** clear alarms and release FDs on exit ([#896](https://github.com/ewired/cadmus/issues/896)) ([48008f6](https://github.com/ewired/cadmus/commit/48008f605db32114bc73526a5798f6da4328388e)), closes [#361](https://github.com/ewired/cadmus/issues/361)
+* **settings editor:** add hold gesture for library delete ([#365](https://github.com/ewired/cadmus/issues/365)) ([dbd5f1b](https://github.com/ewired/cadmus/commit/dbd5f1beaa22c80648a8f6c2068727b2bf908091)), closes [#353](https://github.com/ewired/cadmus/issues/353)
+* **Settings Editor:** Reset dictionary display on download failure ([#532](https://github.com/ewired/cadmus/issues/532)) ([9415fe5](https://github.com/ewired/cadmus/commit/9415fe5cb00602821ddf36a4492f058cd51b39f3))
+* **settings editor:** wrap category nav bar buttons onto 2 rows ([#379](https://github.com/ewired/cadmus/issues/379)) ([0848a71](https://github.com/ewired/cadmus/commit/0848a719235140ced28d2d5f13c220cff470f9b2))
+* **soft-suspend:** no-op when sysfs is unusable ([#882](https://github.com/ewired/cadmus/issues/882)) ([ab786b3](https://github.com/ewired/cadmus/commit/ab786b3ec9ac32419329e07dfb5117d2c098efd8)), closes [#361](https://github.com/ewired/cadmus/issues/361)
+* **time:** apply system and RTC clocks together ([#984](https://github.com/ewired/cadmus/issues/984)) ([7e47503](https://github.com/ewired/cadmus/commit/7e47503fb3a34ad91c412c6e421764defaa5798e))
+* **website:** apply dark theme on first locale redirect ([#992](https://github.com/ewired/cadmus/issues/992)) ([b2fd296](https://github.com/ewired/cadmus/commit/b2fd296e308729ec5e8b2d106ffcdfb31a822d22))
+* **WiFi:** going from Nickel to Cadmus does not interrupt WiFi connection ([6bfd7b4](https://github.com/ewired/cadmus/commit/6bfd7b4783fa69486b56d07d1568675fcb7a106e))
+* **WiFi:** previous DHCP leases will now be re-used, resulting in stable IP addresses. ([6bfd7b4](https://github.com/ewired/cadmus/commit/6bfd7b4783fa69486b56d07d1568675fcb7a106e))
+* **wifi:** reconcile radio at startup ([#796](https://github.com/ewired/cadmus/issues/796)) ([7cf9048](https://github.com/ewired/cadmus/commit/7cf90488ec50ca42f5088bae3fa2cd9f461af99d))
+* **wifi:** retry idle disable after transient radio failure ([#801](https://github.com/ewired/cadmus/issues/801)) ([50e88a4](https://github.com/ewired/cadmus/commit/50e88a452aa4834b19aa424a5ee92144ad35861c))
+* **wifi:** use noop manager in emulator ([#899](https://github.com/ewired/cadmus/issues/899)) ([82ba429](https://github.com/ewired/cadmus/commit/82ba429f1f994cc3f0f37ce92f2e5cb1ef96dfb9)), closes [#475](https://github.com/ewired/cadmus/issues/475) [#352](https://github.com/ewired/cadmus/issues/352)
+
+
+### Performance Improvements
+
+* **db:** use FS copy for startup backups ([#792](https://github.com/ewired/cadmus/issues/792)) ([e11d711](https://github.com/ewired/cadmus/commit/e11d711ea1e7d28662f9b2d7d99b97116ddf89c8))
+* Library sorting is now precomputed instead of calculated on demand. Should benefit big libraries. ([93cb8a1](https://github.com/ewired/cadmus/commit/93cb8a1c5fcdd38566649798e5dfc4a5d8a79d55))
+* **Library:** due to book cover extraction is part of the indexing process now, you should no longer see app stuttering when navigating the library view. ([86a0a36](https://github.com/ewired/cadmus/commit/86a0a3687ffa90034ca5bd839a5961ca6dfbf3e7))
+* **Library:** emit import progress in 5% steps ([#561](https://github.com/ewired/cadmus/issues/561)) ([3184937](https://github.com/ewired/cadmus/commit/31849371c05eb66965ffc0fa372b59df37e39168))
+* Memory usage should reduce a tiny bit, as the whole library is no longer loaded in memory. Memory pressure reduction depends on how big the library is to begin with. This will benefit folks with huge libraries. ([93cb8a1](https://github.com/ewired/cadmus/commit/93cb8a1c5fcdd38566649798e5dfc4a5d8a79d55))
+* optimize dictionary loading ([#364](https://github.com/ewired/cadmus/issues/364)) ([5b23c62](https://github.com/ewired/cadmus/commit/5b23c62629a96e7c250e476713f651a41567b06b))
+* **startup:** Library import is now async, this means that it no longer blocks startup. ([7fbf304](https://github.com/ewired/cadmus/commit/7fbf304fdfb84df1d4c6fcd661adc80ef12c66bc))
+* **Startup:** Wifi management on startup is now async, instead of sync. This should improve startup speeds.  ([6bfd7b4](https://github.com/ewired/cadmus/commit/6bfd7b4783fa69486b56d07d1568675fcb7a106e))
+
+
+### Code Refactoring
+
+* **all:** move codebase to a device-agnostic architecture ([#646](https://github.com/ewired/cadmus/issues/646)) ([9b91d69](https://github.com/ewired/cadmus/commit/9b91d69a42ae14f32183ac915b716390fa6769b9))
+* **settings:** move power settings to Power ([#802](https://github.com/ewired/cadmus/issues/802)) ([3f893e2](https://github.com/ewired/cadmus/commit/3f893e21ebec00f56c277e44e356334a2b708c48))
+
 ## [0.11.0](https://github.com/OGKevin/cadmus/compare/v0.10.1...v0.11.0) (2026-06-22)
 
 ### ⚠ BREAKING CHANGES
